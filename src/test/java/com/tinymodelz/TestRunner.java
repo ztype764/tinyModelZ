@@ -49,6 +49,10 @@ public class TestRunner {
             NeuralNetworkTest.runTests();
             TestReporter.endSuite();
 
+            TestReporter.startSuite("Transformer Components");
+            com.tinymodelz.nn.TransformerTest.runTests();
+            TestReporter.endSuite();
+
             // Generate visual report
             TestReporter.generateReport("test_report.html");
 

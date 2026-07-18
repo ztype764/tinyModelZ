@@ -491,35 +491,63 @@ public class Tensor {
         return result;
     }
 
-    // Matrix Multiplication (2D only)
+    // Matrix Multiplication (supports 2D and N-dimensional batch matrix multiplication)
     public Tensor matmul(Tensor other) {
-        if (this.shape.length != 2 || other.shape.length != 2) {
-            throw new IllegalArgumentException("Matrix multiplication is currently supported only for 2D tensors.");
+        if (this.shape.length < 2 || other.shape.length < 2) {
+            throw new IllegalArgumentException("Matrix multiplication requires tensors of rank >= 2.");
         }
-        int M = this.shape[0];
-        int K = this.shape[1];
-        int K2 = other.shape[0];
-        int N = other.shape[1];
+        int rank = this.shape.length;
+        if (rank != other.shape.length) {
+            throw new IllegalArgumentException("Rank mismatch for matrix multiplication: " + rank + " vs " + other.shape.length);
+        }
+        
+        int M = this.shape[rank - 2];
+        int K = this.shape[rank - 1];
+        int K2 = other.shape[rank - 2];
+        int N = other.shape[rank - 1];
+        
         if (K != K2) {
             throw new IllegalArgumentException("Incompatible shapes for matmul: " + K + " and " + K2);
         }
         
-        int[] outShape = {M, N};
-        float[] outData = new float[M * N];
+        // Batch dimensions check
+        int[] batchShape = new int[rank - 2];
+        for (int i = 0; i < rank - 2; i++) {
+            if (this.shape[i] != other.shape[i]) {
+                throw new IllegalArgumentException("Batch dimensions must match: " + Arrays.toString(this.shape) + " vs " + Arrays.toString(other.shape));
+            }
+            batchShape[i] = this.shape[i];
+        }
         
-        // Transposed layout computation for cache locality
-        float[][] dataA = this.to2DArray();
-        float[][] dataBTrans = other.transpose().to2DArray();
+        int[] outShape = new int[rank];
+        System.arraycopy(batchShape, 0, outShape, 0, rank - 2);
+        outShape[rank - 2] = M;
+        outShape[rank - 1] = N;
         
-        for (int i = 0; i < M; i++) {
-            float[] rowA = dataA[i];
-            for (int j = 0; j < N; j++) {
-                float[] colB = dataBTrans[j];
-                float sum = 0.0f;
-                for (int k = 0; k < K; k++) {
-                    sum += rowA[k] * colB[k];
+        int outSize = computeSize(outShape);
+        float[] outData = new float[outSize];
+        
+        int numBatches = 1;
+        for (int s : batchShape) {
+            numBatches *= s;
+        }
+        
+        Tensor ACont = this.toContiguous();
+        Tensor BCont = other.toContiguous();
+        
+        for (int b = 0; b < numBatches; b++) {
+            int offsetA = b * M * K;
+            int offsetB = b * K * N;
+            int offsetOut = b * M * N;
+            
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < K; k++) {
+                        sum += ACont.data[offsetA + i * K + k] * BCont.data[offsetB + k * N + j];
+                    }
+                    outData[offsetOut + i * N + j] = sum;
                 }
-                outData[i * N + j] = sum;
             }
         }
         
@@ -531,17 +559,120 @@ public class Tensor {
             result.backwardFn = (gradOutput) -> {
                 Tensor gradOutTensor = new Tensor(gradOutput, outShape);
                 if (this.requiresGrad) {
-                    Tensor dX = gradOutTensor.matmul(other.transpose());
+                    Tensor dX = gradOutTensor.matmul(other.transpose(rank - 2, rank - 1));
                     this.accumulateGrad(dX.data);
                 }
                 if (other.requiresGrad) {
-                    Tensor dY = this.transpose().matmul(gradOutTensor);
+                    Tensor dY = this.transpose(rank - 2, rank - 1).matmul(gradOutTensor);
                     other.accumulateGrad(dY.data);
                 }
             };
         }
         return result;
     }
+
+    public Tensor softmax() {
+        return softmax(shape.length - 1);
+    }
+
+    public Tensor softmax(int dim) {
+        if (dim != shape.length - 1) {
+            throw new UnsupportedOperationException("Softmax is currently optimized and supported only for the last dimension.");
+        }
+        Tensor contiguous = this.toContiguous();
+        float[] outData = new float[size];
+        int D = shape[dim];
+        int numRows = size / D;
+        
+        for (int r = 0; r < numRows; r++) {
+            int offset = r * D;
+            float maxVal = Float.NEGATIVE_INFINITY;
+            for (int c = 0; c < D; c++) {
+                maxVal = Math.max(maxVal, contiguous.data[offset + c]);
+            }
+            float sumExps = 0.0f;
+            for (int c = 0; c < D; c++) {
+                float expVal = (float) Math.exp(contiguous.data[offset + c] - maxVal);
+                outData[offset + c] = expVal;
+                sumExps += expVal;
+            }
+            for (int c = 0; c < D; c++) {
+                outData[offset + c] /= sumExps;
+            }
+        }
+        
+        Tensor result = new Tensor(outData, shape);
+        if (this.requiresGrad) {
+            result.requiresGrad = true;
+            result.creators = List.of(this);
+            result.opName = "softmax";
+            result.backwardFn = (gradOutput) -> {
+                if (this.grad == null) {
+                    this.grad = new float[this.data.length];
+                }
+                for (int r = 0; r < numRows; r++) {
+                    int offset = r * D;
+                    float sumDYtimesY = 0.0f;
+                    for (int c = 0; c < D; c++) {
+                        sumDYtimesY += gradOutput[offset + c] * result.data[offset + c];
+                    }
+                    for (int c = 0; c < D; c++) {
+                        float dy = gradOutput[offset + c];
+                        float y = result.data[offset + c];
+                        float dxVal = y * (dy - sumDYtimesY);
+                        int physIdx = this.getContiguousToPhysicalOffset(offset + c);
+                        this.grad[physIdx] += dxVal;
+                    }
+                }
+            };
+        }
+        return result;
+    }
+
+    public Tensor maskedFill(Tensor mask, float value) {
+        int[] outShape = broadcastShapes(this.shape, mask.shape);
+        int outSize = computeSize(outShape);
+        float[] outData = new float[outSize];
+        
+        for (int i = 0; i < outSize; i++) {
+            int idxA = getBroadcastedFlatIndex(i, outShape, this.shape, this.strides);
+            int idxM = getBroadcastedFlatIndex(i, outShape, mask.shape, mask.strides);
+            if (mask.data[mask.offset + idxM] != 0.0f) {
+                outData[i] = value;
+            } else {
+                outData[i] = this.data[this.offset + idxA];
+            }
+        }
+        
+        Tensor result = new Tensor(outData, outShape);
+        if (this.requiresGrad) {
+            result.requiresGrad = true;
+            result.creators = List.of(this);
+            result.opName = "maskedFill";
+            result.backwardFn = (gradOutput) -> {
+                if (this.grad == null) {
+                    this.grad = new float[this.data.length];
+                }
+                for (int i = 0; i < gradOutput.length; i++) {
+                    int idxM = getBroadcastedFlatIndex(i, outShape, mask.shape, mask.strides);
+                    if (mask.data[mask.offset + idxM] == 0.0f) {
+                        int idxA = getBroadcastedFlatIndex(i, outShape, this.shape, this.strides);
+                        this.grad[this.offset + idxA] += gradOutput[i];
+                    }
+                }
+            };
+        }
+        return result;
+    }
+
+    public Tensor add(float val) {
+        return this.add(Tensor.scalar(val));
+    }
+
+    public Tensor multiply(float val) {
+        return this.multiply(Tensor.scalar(val));
+    }
+
 
     // Reduction Operations
     public Tensor sum() {

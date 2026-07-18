@@ -20,11 +20,11 @@
 - [x] Dropout
 
 ## 🤖 Transformer
-- [ ] Self-attention
-- [ ] Multi-head attention
-- [ ] Feed-forward network
-- [ ] Residual connections
-- [ ] Decoder block
+- [x] Self-attention
+- [x] Multi-head attention
+- [x] Feed-forward network
+- [x] Residual connections
+- [x] Decoder block
 
 ## 🔤 Tokenizer
 - [x] Character tokenizer
