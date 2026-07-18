@@ -1,0 +1,25 @@
+# Java build and output directories
+bin/
+target/
+*.class
+
+# IDE and Editor configurations
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+
+# OS temporary files
+.DS_Store
+Thumbs.db
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Local dependencies
+lib/
+

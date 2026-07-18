@@ -4,3 +4,4 @@ Implement every algorithm ourselves.
 One feature per pull request/module.
 Write unit tests.
 Document the math behind each class.
+Use proper and readable file structure in the whole project.
