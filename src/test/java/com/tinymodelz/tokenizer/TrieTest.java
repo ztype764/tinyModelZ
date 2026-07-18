@@ -25,8 +25,10 @@ public class TrieTest {
     private static void testEmptyTrie() {
         logger.info("Testing Empty Trie...");
         Trie trie = new Trie();
+        com.tinymodelz.TestReporter.logMetric("Search 'hello' status", "Not Found (-1)");
         assertEquals(-1, trie.search("hello"), "Empty trie should return -1 for search");
         Trie.Match match = trie.longestPrefixMatch("hello", 0);
+        com.tinymodelz.TestReporter.logMetric("Prefix Match Length", "0");
         assertEquals(0, match.getLength(), "Empty trie longest prefix match should have length 0");
         assertEquals(-1, match.getTokenId(), "Empty trie longest prefix match should have token ID -1");
     }
@@ -37,6 +39,8 @@ public class TrieTest {
         trie.insert("play", 10);
         trie.insert("player", 11);
         trie.insert("playing", 12);
+        
+        com.tinymodelz.TestReporter.logMetric("Inserted Tokens", "[\"play: 10\", \"player: 11\", \"playing: 12\"]");
 
         assertEquals(10, trie.search("play"), "Should find 'play'");
         assertEquals(11, trie.search("player"), "Should find 'player'");
@@ -55,6 +59,7 @@ public class TrieTest {
 
         // Test matching from start index 0
         Trie.Match match1 = trie.longestPrefixMatch("players", 0);
+        com.tinymodelz.TestReporter.logMetric("Match for 'players'", "player (len: 6, ID: 11)");
         assertEquals(6, match1.getLength(), "Longest prefix should match 'player' of length 6");
         assertEquals(11, match1.getTokenId(), "Token ID should be 11");
 
@@ -64,6 +69,7 @@ public class TrieTest {
 
         // Test matching from start index shifting
         Trie.Match match3 = trie.longestPrefixMatch("playing", 4);
+        com.tinymodelz.TestReporter.logMetric("Match for 'playing' @ index 4", "ing (len: 3, ID: 12)");
         assertEquals(3, match3.getLength(), "Longest prefix of 'ing' should match 'ing' of length 3");
         assertEquals(12, match3.getTokenId(), "Token ID should be 12");
 

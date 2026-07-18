@@ -35,6 +35,9 @@ public class TrieTokenizerTest {
 
         List<String> tokens = tokenizer.tokenize("hello, world!");
         List<String> expected = Arrays.asList("hello", ",", "world", "!");
+        com.tinymodelz.TestReporter.logMetric("Vocab size", vocab.size());
+        com.tinymodelz.TestReporter.logMetric("Input string", "hello, world!");
+        com.tinymodelz.TestReporter.logMetric("Tokenized output", tokens);
         assertEquals(expected, tokens, "Basic tokenization with punctuation failed");
     }
 
@@ -46,22 +49,27 @@ public class TrieTokenizerTest {
         TrieTokenizer tokenizer = new TrieTokenizer(vocab);
 
         // Test normal root + suffix subword split
+        List<String> playingTokens = tokenizer.tokenize("playing");
+        com.tinymodelz.TestReporter.logMetric("Tokenize 'playing'", playingTokens);
         assertEquals(
             Arrays.asList("play", "##ing"),
-            tokenizer.tokenize("playing"),
+            playingTokens,
             "WordPiece split 'playing' failed"
         );
 
+        List<String> playerTokens = tokenizer.tokenize("player");
         assertEquals(
             Arrays.asList("play", "##er"),
-            tokenizer.tokenize("player"),
+            playerTokens,
             "WordPiece split 'player' failed"
         );
 
         // Test word not fully coverable by vocab (should become [UNK])
+        List<String> oovTokens = tokenizer.tokenize("playerx");
+        com.tinymodelz.TestReporter.logMetric("Tokenize OOV 'playerx'", oovTokens);
         assertEquals(
             Arrays.asList("[UNK]"),
-            tokenizer.tokenize("playerx"),
+            oovTokens,
             "OOV word 'playerx' should resolve to [UNK]"
         );
 
@@ -89,9 +97,12 @@ public class TrieTokenizerTest {
         int exclId = tokenizer.tokenToId("!");
         
         List<Integer> expectedIds = Arrays.asList(helloId, playId, ingId, exclId);
+        com.tinymodelz.TestReporter.logMetric("Encode text", text);
+        com.tinymodelz.TestReporter.logMetric("Token IDs", ids);
         assertEquals(expectedIds, ids, "Encoding text to IDs failed");
 
         String decoded = tokenizer.decode(ids);
+        com.tinymodelz.TestReporter.logMetric("Decoded text", decoded);
         assertEquals("hello playing !", decoded, "Decoding IDs back to string failed");
     }
 
@@ -107,6 +118,8 @@ public class TrieTokenizerTest {
         assertEquals(true, tokenizer.tokenToId("[MASK]") >= 0, "MASK token must exist");
 
         int padId = tokenizer.getPadId();
+        com.tinymodelz.TestReporter.logMetric("PAD token ID", padId);
+        com.tinymodelz.TestReporter.logMetric("UNK token ID", tokenizer.getUnkId());
         assertEquals("[PAD]", tokenizer.idToToken(padId), "padId must map back to [PAD]");
     }
 }

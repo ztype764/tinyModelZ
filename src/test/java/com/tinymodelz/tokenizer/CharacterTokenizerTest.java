@@ -34,6 +34,8 @@ public class CharacterTokenizerTest {
 
         List<String> tokens = tokenizer.tokenize("hello world!");
         List<String> expected = Arrays.asList("h", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d", "!");
+        com.tinymodelz.TestReporter.logMetric("Input text", "hello world!");
+        com.tinymodelz.TestReporter.logMetric("Split tokens", tokens);
         assertEquals(expected, tokens, "Character-level splitting failed");
     }
 
@@ -61,9 +63,12 @@ public class CharacterTokenizerTest {
             tokenizer.tokenToId("d"),
             tokenizer.tokenToId("!")
         );
+        com.tinymodelz.TestReporter.logMetric("Input text", originalText);
+        com.tinymodelz.TestReporter.logMetric("Encoded IDs", ids);
         assertEquals(expectedIds, ids, "Character encoding to IDs failed");
 
         String decodedText = tokenizer.decode(ids);
+        com.tinymodelz.TestReporter.logMetric("Decoded text", decodedText);
         assertEquals(originalText, decodedText, "Character decoding (roundtrip) failed");
     }
 
@@ -75,6 +80,8 @@ public class CharacterTokenizerTest {
         // 'z' is not in vocab, should become [UNK]
         List<String> tokens = tokenizer.tokenize("abz");
         List<String> expected = Arrays.asList("a", "b", "[UNK]");
+        com.tinymodelz.TestReporter.logMetric("Vocab defined", vocab);
+        com.tinymodelz.TestReporter.logMetric("Tokenized 'abz'", tokens);
         assertEquals(expected, tokens, "Unknown character mapping failed");
 
         int unkId = tokenizer.getUnkId();

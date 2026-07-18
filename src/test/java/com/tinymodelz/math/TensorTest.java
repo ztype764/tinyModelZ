@@ -53,6 +53,10 @@ public class TensorTest {
         Tensor t2 = new Tensor(rawData, new int[]{2, 3});
         assertEquals(1.0f, t2.getValByFlatIndex(0), 1e-5f, "Value access failed");
         assertEquals(6.0f, t2.getValByFlatIndex(5), 1e-5f, "Value access failed");
+
+        com.tinymodelz.TestReporter.logMetric("t1 shape", Arrays.toString(t1.getShape()));
+        com.tinymodelz.TestReporter.logMetric("t2 shape", Arrays.toString(t2.getShape()));
+        com.tinymodelz.TestReporter.logMetric("t2 contiguous", t2.isContiguous());
     }
 
     private static void testShapeTransformations() {
@@ -81,6 +85,11 @@ public class TensorTest {
         assertEquals(3.0f, sliced.getValByFlatIndex(1), 1e-5f, "Sliced index 1 mismatch");
         assertEquals(5.0f, sliced.getValByFlatIndex(2), 1e-5f, "Sliced index 2 mismatch");
         assertEquals(6.0f, sliced.getValByFlatIndex(3), 1e-5f, "Sliced index 3 mismatch");
+
+        com.tinymodelz.TestReporter.logMetric("Original shape", Arrays.toString(t.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Reshaped shape", Arrays.toString(reshaped.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Transposed shape", Arrays.toString(transposed.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Sliced shape", Arrays.toString(sliced.getShape()));
     }
 
     private static void testBroadcastingOperations() {
@@ -101,6 +110,10 @@ public class TensorTest {
         assertEquals(21.0f, tC.getValByFlatIndex(1), 1e-5f, "Broadcasting add calculation failed");
         assertEquals(12.0f, tC.getValByFlatIndex(2), 1e-5f, "Broadcasting add calculation failed");
         assertEquals(23.0f, tC.getValByFlatIndex(5), 1e-5f, "Broadcasting add calculation failed");
+
+        com.tinymodelz.TestReporter.logMetric("tA shape", Arrays.toString(tA.getShape()));
+        com.tinymodelz.TestReporter.logMetric("tB shape", Arrays.toString(tB.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Broadcasted sum shape", Arrays.toString(tC.getShape()));
     }
 
     private static void testMatrixMultiplication() {
@@ -125,6 +138,11 @@ public class TensorTest {
         assertEquals(64.0f, tC.getValByFlatIndex(1), 1e-5f, "Matmul cell [0,1] incorrect");
         assertEquals(139.0f, tC.getValByFlatIndex(2), 1e-5f, "Matmul cell [1,0] incorrect");
         assertEquals(154.0f, tC.getValByFlatIndex(3), 1e-5f, "Matmul cell [1,1] incorrect");
+
+        com.tinymodelz.TestReporter.logMetric("tA Matmul shape", Arrays.toString(tA.getShape()));
+        com.tinymodelz.TestReporter.logMetric("tB Matmul shape", Arrays.toString(tB.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Output Matmul shape", Arrays.toString(tC.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Output values", Arrays.toString(tC.getData()));
     }
 
     private static void testAutograd() {
@@ -174,12 +192,6 @@ public class TensorTest {
         // Sum to get scalar output for backward
         Tensor loss = z.sum();
         loss.backward();
-
-        // dz/dadded = [1, 1] (both inputs > 0)
-        // dprod = [1, 1]
-        // dC = [1, 1]
-        // dA = dprod * B^T = [1, 1] * [5, 6] -> Row 0: [5, 6], Row 1: [5, 6]
-        // dB = A^T * dprod = [1, 3; -2, 4] * [1; 1] = [4, 2]
         
         assertEquals(1.0f, C.getGrad()[0], 1e-5f, "dC[0] incorrect");
         assertEquals(1.0f, C.getGrad()[1], 1e-5f, "dC[1] incorrect");
@@ -191,5 +203,10 @@ public class TensorTest {
 
         assertEquals(4.0f, B.getGrad()[0], 1e-5f, "dB[0] incorrect");
         assertEquals(2.0f, B.getGrad()[1], 1e-5f, "dB[1] incorrect");
+
+        com.tinymodelz.TestReporter.logMetric("Scalar Forward Output", y.getValByFlatIndex(0));
+        com.tinymodelz.TestReporter.logMetric("dx1, dx2, dx3", Arrays.toString(new float[]{x1.getGrad()[0], x2.getGrad()[0], x3.getGrad()[0]}));
+        com.tinymodelz.TestReporter.logMetric("dA grad shape", Arrays.toString(A.getGrad()));
+        com.tinymodelz.TestReporter.logMetric("dB grad shape", Arrays.toString(B.getGrad()));
     }
 }

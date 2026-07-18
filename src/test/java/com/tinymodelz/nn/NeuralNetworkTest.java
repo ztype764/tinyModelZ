@@ -74,6 +74,12 @@ public class NeuralNetworkTest {
 
         assertEquals(1.0f, linear.getBias().getGrad()[0], 1e-5f, "Linear bias grad[0] incorrect");
         assertEquals(1.0f, linear.getBias().getGrad()[1], 1e-5f, "Linear bias grad[1] incorrect");
+
+        com.tinymodelz.TestReporter.logMetric("Weight shape", "2x3");
+        com.tinymodelz.TestReporter.logMetric("Input shape", Arrays.toString(input.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Output shape", Arrays.toString(out.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Output values", Arrays.toString(out.getData()));
+        com.tinymodelz.TestReporter.logMetric("Input grad", Arrays.toString(input.getGrad()));
     }
 
     private static void testEmbeddingLayer() {
@@ -103,6 +109,11 @@ public class NeuralNetworkTest {
         assertEquals(1.0f, emb.getWeight().getGrad()[0], 1e-5f, "Embedding grad row 0 incorrect");
         assertEquals(0.0f, emb.getWeight().getGrad()[4], 1e-5f, "Embedding grad row 1 incorrect");
         assertEquals(1.0f, emb.getWeight().getGrad()[8], 1e-5f, "Embedding grad row 2 incorrect");
+
+        com.tinymodelz.TestReporter.logMetric("Vocab size", "3");
+        com.tinymodelz.TestReporter.logMetric("Embedding dim", "4");
+        com.tinymodelz.TestReporter.logMetric("Indices", Arrays.toString(indices.getData()));
+        com.tinymodelz.TestReporter.logMetric("Output shape", Arrays.toString(out.getShape()));
     }
 
     private static void testGeLUActivation() {
@@ -121,6 +132,10 @@ public class NeuralNetworkTest {
         assertEquals(-0.077f, x.getGrad()[0], 1e-2f, "GeLU grad -1.0 incorrect");
         assertEquals(0.5f, x.getGrad()[1], 1e-3f, "GeLU grad 0.0 incorrect");
         assertEquals(1.077f, x.getGrad()[2], 1e-2f, "GeLU grad 1.0 incorrect");
+
+        com.tinymodelz.TestReporter.logMetric("Input values", Arrays.toString(x.getData()));
+        com.tinymodelz.TestReporter.logMetric("GeLU output", Arrays.toString(y.getData()));
+        com.tinymodelz.TestReporter.logMetric("Input grad", Arrays.toString(x.getGrad()));
     }
 
     private static void testLayerNorm() {
@@ -143,6 +158,9 @@ public class NeuralNetworkTest {
 
         assertEquals(0.0f, input.getGrad()[0], 1e-5f, "LayerNorm input grad should be zero when dy/dout is constant");
         assertEquals(0.0f, input.getGrad()[3], 1e-5f, "LayerNorm input grad should be zero when dy/dout is constant");
+
+        com.tinymodelz.TestReporter.logMetric("Norm shape", Arrays.toString(input.getShape()));
+        com.tinymodelz.TestReporter.logMetric("Normalized output", Arrays.toString(out.getData()));
     }
 
     private static void testDropout() {
@@ -184,5 +202,10 @@ public class NeuralNetworkTest {
         for (int i = 0; i < 100; i++) {
             assertEquals(1.0f, outEval.getValByFlatIndex(i), 1e-5f, "Dropout in eval mode must be identity");
         }
+
+        com.tinymodelz.TestReporter.logMetric("Dropout rate", "0.2");
+        com.tinymodelz.TestReporter.logMetric("Dropped units (Train)", zeroCount);
+        com.tinymodelz.TestReporter.logMetric("Active units (Train)", 100 - zeroCount);
+        com.tinymodelz.TestReporter.logMetric("Eval output check", outEval.getValByFlatIndex(0));
     }
 }

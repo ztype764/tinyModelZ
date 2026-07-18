@@ -64,6 +64,13 @@ public class MathEngineTest {
         assertEquals(expectedVal, vSoftmax.get(0), 1e-5f, "Softmax calculation failed");
         assertEquals(expectedVal, vSoftmax.get(1), 1e-5f, "Softmax calculation failed");
         assertEquals(expectedVal, vSoftmax.get(2), 1e-5f, "Softmax calculation failed");
+
+        com.tinymodelz.TestReporter.logMetric("v1", java.util.Arrays.toString(v1.getData()));
+        com.tinymodelz.TestReporter.logMetric("v2", java.util.Arrays.toString(v2.getData()));
+        com.tinymodelz.TestReporter.logMetric("v1 + v2", java.util.Arrays.toString(sum.getData()));
+        com.tinymodelz.TestReporter.logMetric("v1 . v2", dot);
+        com.tinymodelz.TestReporter.logMetric("v1 Norm", normVal);
+        com.tinymodelz.TestReporter.logMetric("v1 Softmax", java.util.Arrays.toString(vSoftmax.getData()));
     }
 
     private static void testMatrixOperations() {
@@ -118,6 +125,12 @@ public class MathEngineTest {
             {13.0f, 24.0f}
         });
         assertEquals(expectedBiased, biasedMatrix, "Matrix row-wise bias addition failed");
+
+        com.tinymodelz.TestReporter.logMetric("mA Shape", mA.rows() + "x" + mA.cols());
+        com.tinymodelz.TestReporter.logMetric("mB Shape", mB.rows() + "x" + mB.cols());
+        com.tinymodelz.TestReporter.logMetric("mA * mB", expectedProduct.toString());
+        com.tinymodelz.TestReporter.logMetric("mA^T", expectedTranspose.toString());
+        com.tinymodelz.TestReporter.logMetric("mA * v", matVec.toString());
     }
 
     private static void testRandomInitializers() {
@@ -148,6 +161,10 @@ public class MathEngineTest {
         }
         float mean = sum / (mat.rows() * mat.cols());
         assertEquals(0.0f, mean, 0.05f, "Gaussian matrix initialization mean deviates from 0.0");
+
+        com.tinymodelz.TestReporter.logMetric("Uniform fill size", vec.size());
+        com.tinymodelz.TestReporter.logMetric("Gaussian shape", mat.rows() + "x" + mat.cols());
+        com.tinymodelz.TestReporter.logMetric("Gaussian mean", mean);
     }
 
     private static void testMathIO() {
@@ -201,6 +218,11 @@ public class MathEngineTest {
                     throw new AssertionError("Loaded tensor value mismatch at index " + i);
                 }
             }
+
+            com.tinymodelz.TestReporter.logMetric("Saved Vector file size", tempVecFile.length() + " bytes");
+            com.tinymodelz.TestReporter.logMetric("Saved Matrix file size", tempMatFile.length() + " bytes");
+            com.tinymodelz.TestReporter.logMetric("Saved Tensor file size", tempTensorFile.length() + " bytes");
+            com.tinymodelz.TestReporter.logMetric("Tensor loaded shape", java.util.Arrays.toString(loadedShape));
 
         } catch (IOException e) {
             throw new AssertionError("MathIO save/load triggered IOException", e);
