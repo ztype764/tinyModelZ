@@ -20,6 +20,7 @@ public class TestRunner {
         try {
             TrieTest.runTests();
             TrieTokenizerTest.runTests();
+            CharacterTokenizerTest.runTests();
             logger.info("==================================================");
             logger.info("ALL TESTS PASSED SUCCESSFULLY!");
             logger.info("==================================================");
