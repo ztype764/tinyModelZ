@@ -140,6 +140,10 @@ public class Matrix {
         return copy;
     }
 
+    public float[][] getData() {
+        return data;
+    }
+
     /**
      * Extracts a single row as a {@link Vector}.
      * 

@@ -158,24 +158,49 @@ public class MathEngineTest {
             {10.5f, 20.6f},
             {30.7f, 40.8f}
         });
+        Tensor origTensor = new Tensor(new float[]{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f}, new int[]{2, 3});
 
         try {
             File tempVecFile = File.createTempFile("test_vec_", ".tma");
             File tempMatFile = File.createTempFile("test_mat_", ".tma");
+            File tempTensorFile = File.createTempFile("test_tensor_", ".tma");
             tempVecFile.deleteOnExit();
             tempMatFile.deleteOnExit();
+            tempTensorFile.deleteOnExit();
 
             // Save
             MathIO.saveVector(origVec, tempVecFile);
             MathIO.saveMatrix(origMat, tempMatFile);
+            MathIO.saveTensor(origTensor, tempTensorFile);
 
             // Load
             Vector loadedVec = MathIO.loadVector(tempVecFile);
             Matrix loadedMat = MathIO.loadMatrix(tempMatFile);
+            Tensor loadedTensor = MathIO.loadTensor(tempTensorFile);
 
-            // Verify
+            // Verify Vector & Matrix
             assertEquals(origVec, loadedVec, "Loaded vector does not match saved vector");
             assertEquals(origMat, loadedMat, "Loaded matrix does not match saved matrix");
+
+            // Verify Tensor shape
+            int[] origShape = origTensor.getShape();
+            int[] loadedShape = loadedTensor.getShape();
+            if (origShape.length != loadedShape.length) {
+                throw new AssertionError("Loaded tensor rank mismatch");
+            }
+            for (int i = 0; i < origShape.length; i++) {
+                if (origShape[i] != loadedShape[i]) {
+                    throw new AssertionError("Loaded tensor shape mismatch");
+                }
+            }
+            // Verify Tensor data
+            float[] origData = origTensor.getData();
+            float[] loadedData = loadedTensor.getData();
+            for (int i = 0; i < origData.length; i++) {
+                if (Float.compare(origData[i], loadedData[i]) != 0) {
+                    throw new AssertionError("Loaded tensor value mismatch at index " + i);
+                }
+            }
 
         } catch (IOException e) {
             throw new AssertionError("MathIO save/load triggered IOException", e);

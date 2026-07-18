@@ -23,3 +23,6 @@ __pycache__/
 # Local dependencies
 lib/
 
+
+#Test Reports
+test_report.html

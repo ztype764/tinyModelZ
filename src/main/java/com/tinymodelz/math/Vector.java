@@ -117,6 +117,10 @@ public class Vector {
         return copy;
     }
 
+    public float[] getData() {
+        return data;
+    }
+
     /**
      * Adds another vector to this vector.
      * 
