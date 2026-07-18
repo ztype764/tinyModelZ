@@ -13,11 +13,11 @@
 - [x] (Optional) Automatic differentiation
 
 ## 🕸️ Neural Network
-- [ ] Linear layer
-- [ ] Embeddings
-- [ ] Activation functions
-- [ ] LayerNorm
-- [ ] Dropout
+- [x] Linear layer
+- [x] Embeddings
+- [x] Activation functions
+- [x] LayerNorm
+- [x] Dropout
 
 ## 🤖 Transformer
 - [ ] Self-attention

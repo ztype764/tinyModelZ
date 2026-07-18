@@ -164,7 +164,7 @@ public class Tensor {
             this.grad = new float[this.data.length];
         }
         for (int i = 0; i < incomingGrad.length; i++) {
-            this.grad[this.offset + i] += incomingGrad[i];
+            this.grad[getContiguousToPhysicalOffset(i)] += incomingGrad[i];
         }
     }
 

@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.tinymodelz.math.MathEngineTest;
 import com.tinymodelz.math.TensorTest;
+import com.tinymodelz.nn.NeuralNetworkTest;
 import com.tinymodelz.tokenizer.CharacterTokenizerTest;
 import com.tinymodelz.tokenizer.TrieTest;
 import com.tinymodelz.tokenizer.TrieTokenizerTest;
@@ -42,6 +43,10 @@ public class TestRunner {
 
             TestReporter.startSuite("Tensor Engine Operations");
             TensorTest.runTests();
+            TestReporter.endSuite();
+
+            TestReporter.startSuite("Neural Network Layers");
+            NeuralNetworkTest.runTests();
             TestReporter.endSuite();
 
             // Generate visual report
