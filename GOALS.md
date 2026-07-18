@@ -7,10 +7,10 @@
 - [x] File serialization
 
 ## 🧠 Tensor Engine
-- [ ] Tensors
-- [ ] Broadcasting
-- [ ] Basic operations
-- [ ] (Optional) Automatic differentiation
+- [x] Tensors
+- [x] Broadcasting
+- [x] Basic operations
+- [x] (Optional) Automatic differentiation
 
 ## 🕸️ Neural Network
 - [ ] Linear layer
