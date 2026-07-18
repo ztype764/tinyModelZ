@@ -14,11 +14,9 @@ public class CharacterTokenizerTest {
     private static final Logger logger = LoggerFactory.getLogger(CharacterTokenizerTest.class);
 
     public static void runTests() {
-        logger.info("Running CharacterTokenizerTest...");
-        testBasicCharacterSplitting();
-        testEncodeAndDecodeRoundtrip();
-        testSpecialAndUnkTokens();
-        logger.info("CharacterTokenizerTest passed successfully!");
+        com.tinymodelz.TestReporter.runTest("Testing Basic Character Splitting", () -> testBasicCharacterSplitting());
+        com.tinymodelz.TestReporter.runTest("Testing Character Encode and Decode Roundtrip", () -> testEncodeAndDecodeRoundtrip());
+        com.tinymodelz.TestReporter.runTest("Testing Special and Unknown Characters", () -> testSpecialAndUnkTokens());
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {

@@ -13,4 +13,4 @@ javac -cp "lib/*" -d bin $(find src -name "*.java")
 # Run the test suite
 # Note: Change -Dorg.slf4j.simpleLogger.defaultLogLevel to "debug" or "trace" to see detailed step-by-step tokenizer matching logs.
 echo "Running tests..."
-java -Dorg.slf4j.simpleLogger.defaultLogLevel=info -cp "bin:lib/*" com.tinymodelz.tokenizer.TestRunner
+java -Dorg.slf4j.simpleLogger.defaultLogLevel=info -cp "bin:lib/*" com.tinymodelz.TestRunner

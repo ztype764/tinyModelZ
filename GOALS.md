@@ -1,10 +1,10 @@
 # 🎯 Project Goals & Roadmap
 
 ## 🧮 Math Engine
-- [ ] Matrix operations
-- [ ] Vector operations
-- [ ] Random initialization
-- [ ] File serialization
+- [x] Matrix operations
+- [x] Vector operations
+- [x] Random initialization
+- [x] File serialization
 
 ## 🧠 Tensor Engine
 - [ ] Tensors

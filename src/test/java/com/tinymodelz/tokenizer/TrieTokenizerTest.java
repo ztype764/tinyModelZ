@@ -14,12 +14,10 @@ public class TrieTokenizerTest {
     private static final Logger logger = LoggerFactory.getLogger(TrieTokenizerTest.class);
 
     public static void runTests() {
-        logger.info("Running TrieTokenizerTest...");
-        testBasicTokenization();
-        testWordPieceTokenization();
-        testEncodeAndDecode();
-        testSpecialTokens();
-        logger.info("TrieTokenizerTest passed successfully!");
+        com.tinymodelz.TestReporter.runTest("Testing Basic Tokenization", () -> testBasicTokenization());
+        com.tinymodelz.TestReporter.runTest("Testing WordPiece subword tokenization", () -> testWordPieceTokenization());
+        com.tinymodelz.TestReporter.runTest("Testing Encode and Decode", () -> testEncodeAndDecode());
+        com.tinymodelz.TestReporter.runTest("Testing Special Tokens registration", () -> testSpecialTokens());
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {

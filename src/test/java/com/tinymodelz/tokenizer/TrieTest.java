@@ -11,11 +11,9 @@ public class TrieTest {
     private static final Logger logger = LoggerFactory.getLogger(TrieTest.class);
 
     public static void runTests() {
-        logger.info("Running TrieTest...");
-        testEmptyTrie();
-        testInsertionAndSearch();
-        testLongestPrefixMatch();
-        logger.info("TrieTest passed successfully!");
+        com.tinymodelz.TestReporter.runTest("Testing Empty Trie", () -> testEmptyTrie());
+        com.tinymodelz.TestReporter.runTest("Testing Insertion and Search", () -> testInsertionAndSearch());
+        com.tinymodelz.TestReporter.runTest("Testing Longest Prefix Match", () -> testLongestPrefixMatch());
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {
