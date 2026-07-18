@@ -1,16 +1,7 @@
 #!/bin/bash
 set -e
 
-# Setup clean build environment
-echo "Cleaning build directory 'bin'..."
-rm -rf bin
-mkdir -p bin
+# Run the complete test suite using Maven
+echo "Compiling and running test suite via Maven..."
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java -Dexec.mainClass="com.tinymodelz.TestRunner" -Dexec.classpathScope="test"
 
-# Compile all Java files in src
-echo "Compiling Java files..."
-javac -cp "lib/*" -d bin $(find src -name "*.java")
-
-# Run the test suite
-# Note: Change -Dorg.slf4j.simpleLogger.defaultLogLevel to "debug" or "trace" to see detailed step-by-step tokenizer matching logs.
-echo "Running tests..."
-java -Dorg.slf4j.simpleLogger.defaultLogLevel=info -cp "bin:lib/*" com.tinymodelz.TestRunner

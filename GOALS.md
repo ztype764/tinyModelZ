@@ -31,18 +31,18 @@
 - [x] Trie-based subword tokenizer (WordPiece)
 
 ## 🏋️ Training
-- [ ] Dataset loader
-- [ ] Batching
-- [ ] Cross-entropy loss
-- [ ] Adam optimizer
-- [ ] Checkpoints
+- [x] Dataset loader
+- [x] Batching
+- [x] Cross-entropy loss
+- [x] Adam optimizer (AdamW style with momentum & weight decay)
+- [x] Checkpoints (binary TMAT serialization)
 
 ## 🔮 Inference
-- [ ] Greedy decoding
-- [ ] Temperature
-- [ ] Top-k and Top-p sampling
+- [x] Greedy decoding
+- [x] Temperature
+- [x] Top-k and Top-p sampling
 
 ## 🖥️ CLI/Web API
-- [ ] Prompt input
-- [ ] Generate response
-- [ ] Save/load models
+- [x] Prompt input & Interactive UI visualizer
+- [x] Generate response (REST API endpoints for tokenization and model execution)
+- [x] GraalVM Native Image compilation for low memory usage (<85MB RSS) and sub-100ms startup

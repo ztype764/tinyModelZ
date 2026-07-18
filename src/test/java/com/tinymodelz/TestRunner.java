@@ -53,6 +53,14 @@ public class TestRunner {
             com.tinymodelz.nn.TransformerTest.runTests();
             TestReporter.endSuite();
 
+            TestReporter.startSuite("Language Model Training & Optimization");
+            com.tinymodelz.train.TrainingTest.runTests();
+            TestReporter.endSuite();
+
+            TestReporter.startSuite("Autoregressive Inference & Sampling");
+            com.tinymodelz.inference.GeneratorTest.runTests();
+            TestReporter.endSuite();
+
             // Generate visual report
             TestReporter.generateReport("test_report.html");
 

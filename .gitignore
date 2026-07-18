@@ -1,5 +1,6 @@
 # Java build and output directories
 bin/
+tools/
 target/
 *.class
 

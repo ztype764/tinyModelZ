@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TinyModelZ - Neural Engine Visualizer</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-primary: #0b0f19;
+            --bg-secondary: #161f30;
+            --bg-tertiary: #1f2d47;
+            --accent-purple: #8b5cf6;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --success: #10b981;
+            --border: rgba(255, 255, 255, 0.08);
+            --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, #0d1527 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.25rem;
+            color: #fff;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+        }
+
+        .logo-text {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #fff, #9ca3af);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .system-status {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--success);
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        main {
+            flex: 1;
+            max-width: 1400px;
+            width: 100%;
+            margin: 2rem auto;
+            padding: 0 2rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 1024px) {
+            main {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .panel-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.75rem;
+        }
+
+        .panel-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 18px;
+            background: linear-gradient(to bottom, var(--accent-purple), var(--accent-blue));
+            border-radius: 2px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        textarea, select, input {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 0.75rem 1rem;
+            font-family: inherit;
+            font-size: 0.95rem;
+            outline: none;
+            transition: var(--transition);
+            width: 100%;
+        }
+
+        textarea:focus, select:focus, input:focus {
+            border-color: var(--accent-purple);
+            box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-blue) 100%);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+            filter: brightness(1.1);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .token-display {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 1rem;
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            min-height: 80px;
+            align-content: flex-start;
+        }
+
+        .token-badge {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.15));
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 6px;
+            padding: 0.35rem 0.6rem;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: var(--transition);
+        }
+
+        .token-badge:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 2px 8px rgba(6, 182, 212, 0.2);
+        }
+
+        .token-id {
+            font-family: 'Space Grotesk', sans-serif;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--accent-cyan);
+            padding: 0.1rem 0.3rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .stat-val {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .grid-config {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .heatmap-container {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            background-color: #0c101b;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .activation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+            gap: 3px;
+        }
+
+        .activation-cell {
+            aspect-ratio: 1;
+            border-radius: 3px;
+            transition: var(--transition);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .activation-cell:hover {
+            transform: scale(1.2);
+            z-index: 10;
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            margin-top: auto;
+            font-size: 0.9rem;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: #000;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            white-space: nowrap;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon">Z</div>
+            <div class="logo-text">TinyModelZ Engine</div>
+        </div>
+        <div class="system-status">
+            <div class="pulse-dot"></div>
+            <span>GraalVM Native Image <span id="jdk-ver">21.0.2</span></span>
+        </div>
+    </header>
+
+    <main>
+        <!-- Tokenizer Panel -->
+        <div class="panel">
+            <div class="panel-title">Interactive Subword & Character Tokenizer</div>
+            
+            <div class="form-group">
+                <label for="text-input">Input String</label>
+                <textarea id="text-input" placeholder="Type text here to split it into subwords...">hello playing transformer attention engine!</textarea>
+            </div>
+
+            <div class="grid-config">
+                <div class="form-group">
+                    <label for="tokenizer-type">Tokenizer Type</label>
+                    <select id="tokenizer-type">
+                        <option value="wordpiece">WordPiece Subword</option>
+                        <option value="character">Character-level</option>
+                    </select>
+                </div>
+                <div class="form-group" style="justify-content: flex-end;">
+                    <button class="btn" id="btn-tokenize">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        Tokenize Text
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Tokenized Output</label>
+                <div class="token-display" id="token-output">
+                    <!-- Badges will appear here -->
+                    <span style="color: var(--text-muted); font-size: 0.9rem; margin: auto;">No text tokenized yet.</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="detokenize-output">Detokenized Reconstruction</label>
+                <input type="text" id="detokenize-output" readonly placeholder="Reconstructed text from tokens...">
+            </div>
+        </div>
+
+        <!-- Transformer Panel -->
+        <div class="panel">
+            <div class="panel-title">Transformer Block Forward & Backward Pass</div>
+
+            <div class="grid-config">
+                <div class="form-group">
+                    <label for="embed-dim">Embedding Dim (C)</label>
+                    <input type="number" id="embed-dim" value="16" min="4" max="64" step="4">
+                </div>
+                <div class="form-group">
+                    <label for="num-heads">Attention Heads (H)</label>
+                    <input type="number" id="num-heads" value="4" min="1" max="8">
+                </div>
+            </div>
+
+            <div class="form-group" style="justify-content: flex-end;">
+                <button class="btn" id="btn-forward" style="background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-blue) 100%); box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                    Run Block Execution
+                </button>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-label">Output Shape</span>
+                    <span class="stat-val" id="stat-shape">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">AOT Latency</span>
+                    <span class="stat-val" id="stat-latency" style="color: var(--accent-cyan);">&lt; 1 ms</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Activation Mean</span>
+                    <span class="stat-val" id="stat-mean">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Activation Std</span>
+                    <span class="stat-val" id="stat-std">-</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Output Activation Heatmap (Out Tensor values)</label>
+                <div class="heatmap-container">
+                    <div class="activation-grid" id="heatmap-grid">
+                        <!-- Heatmap cells will be drawn here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <footer>
+        TinyModelZ Math Engine. Powered by Spring Boot 3.2.4 & GraalVM Native Image.
+    </footer>
+
+    <script>
+        const tooltip = document.getElementById('tooltip');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchStatus();
+            
+            document.getElementById('btn-tokenize').addEventListener('click', runTokenize);
+            document.getElementById('btn-forward').addEventListener('click', runForward);
+        });
+
+        function fetchStatus() {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('jdk-ver').textContent = 'CE ' + data.jdkVersion;
+                })
+                .catch(err => console.error("Error fetching engine status:", err));
+        }
+
+        function runTokenize() {
+            const text = document.getElementById('text-input').value;
+            const type = document.getElementById('tokenizer-type').value;
+
+            fetch('/api/tokenizer/tokenize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, type })
+            })
+            .then(r => r.json())
+            .then(data => {
+                const outDiv = document.getElementById('token-output');
+                outDiv.innerHTML = '';
+                
+                if (data.tokens.length === 0) {
+                    outDiv.innerHTML = '<span style="color: var(--text-muted); font-size: 0.9rem; margin: auto;">Empty output</span>';
+                    return;
+                }
+
+                data.tokens.forEach((tok, i) => {
+                    const badge = document.createElement('span');
+                    badge.className = 'token-badge';
+                    badge.innerHTML = `${escapeHtml(tok)} <span class="token-id">${data.ids[i]}</span>`;
+                    outDiv.appendChild(badge);
+                });
+
+                // Detokenize back
+                fetch('/api/tokenizer/decode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: data.ids, type })
+                })
+                .then(r => r.json())
+                .then(decodeData => {
+                    document.getElementById('detokenize-output').value = decodeData.text;
+                });
+            })
+            .catch(err => {
+                console.error("Error tokenizing:", err);
+                alert("Tokenization API call failed");
+            });
+        }
+
+        function runForward() {
+            const text = document.getElementById('text-input').value;
+            const embedDim = parseInt(document.getElementById('embed-dim').value);
+            const numHeads = parseInt(document.getElementById('num-heads').value);
+
+            fetch('/api/transformer/forward', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, embedDim, numHeads })
+            })
+            .then(r => r.json())
+            .then(data => {
+                // Update stats
+                document.getElementById('stat-shape').textContent = `[${data.shape.join(', ')}]`;
+                document.getElementById('stat-latency').textContent = `${data.forwardTimeMs + data.backwardTimeMs} ms`;
+                document.getElementById('stat-mean').textContent = data.mean.toFixed(4);
+                document.getElementById('stat-std').textContent = data.std.toFixed(4);
+
+                // Render heatmap
+                renderHeatmap(data.data);
+            })
+            .catch(err => {
+                console.error("Error running forward pass:", err);
+                alert("Forward pass API call failed");
+            });
+        }
+
+        function renderHeatmap(flatData) {
+            const grid = document.getElementById('heatmap-grid');
+            grid.innerHTML = '';
+
+            if (!flatData || flatData.length === 0) return;
+
+            // Find min/max for normalization
+            let min = Infinity, max = -Infinity;
+            flatData.forEach(v => {
+                if (v < min) min = v;
+                if (v > max) max = v;
+            });
+            const range = max - min || 1;
+
+            flatData.forEach((val, i) => {
+                const cell = document.createElement('div');
+                cell.className = 'activation-cell';
+                
+                // Color scaling: red for positive, blue for negative, dark/black for near zero
+                let r = 0, g = 0, b = 0;
+                if (val >= 0) {
+                    // Positive: scale red/yellow
+                    const intensity = Math.min(255, Math.floor((val / max) * 255));
+                    r = intensity;
+                    g = Math.floor(intensity * 0.4);
+                } else {
+                    // Negative: scale blue/cyan
+                    const intensity = Math.min(255, Math.floor((val / min) * 255));
+                    b = intensity;
+                    g = Math.floor(intensity * 0.5);
+                }
+
+                cell.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+                
+                // Mouse listeners for tooltip
+                cell.addEventListener('mouseenter', (e) => {
+                    tooltip.style.opacity = 1;
+                    tooltip.textContent = `Index: ${i} | Value: ${val.toFixed(5)}`;
+                });
+
+                cell.addEventListener('mousemove', (e) => {
+                    tooltip.style.left = (e.pageX + 10) + 'px';
+                    tooltip.style.top = (e.pageY - 25) + 'px';
+                });
+
+                cell.addEventListener('mouseleave', () => {
+                    tooltip.style.opacity = 0;
+                });
+
+                grid.appendChild(cell);
+            });
+        }
+
+        function escapeHtml(string) {
+            return String(string).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>

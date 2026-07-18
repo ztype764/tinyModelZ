@@ -1,0 +1,229 @@
+package com.tinymodelz.train;
+
+import com.tinymodelz.math.Tensor;
+import com.tinymodelz.nn.Embedding;
+import com.tinymodelz.nn.Linear;
+import com.tinymodelz.nn.TransformerBlock;
+import com.tinymodelz.nn.CrossEntropyLoss;
+import com.tinymodelz.tokenizer.CharacterTokenizer;
+import com.tinymodelz.TestReporter;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
+
+/**
+ * <h3>Training Test</h3>
+ * 
+ * <p>Unit and integration tests for the training loop components (Dataset, DataLoader, CrossEntropyLoss, AdamW, Checkpoints).</p>
+ */
+public class TrainingTest {
+
+    public static void runTests() {
+        TestReporter.runTest("Dataset and DataLoader Batching", () -> testDatasetAndDataLoader());
+        TestReporter.runTest("Cross Entropy Loss Forward & Backward Pass", () -> testCrossEntropyLoss());
+        TestReporter.runTest("AdamW Optimizer weight updates", () -> testAdamWOptimizer());
+        TestReporter.runTest("Model Checkpoint Save & Load", () -> {
+            try {
+                testModelCheckpoint();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        TestReporter.runTest("End-to-End TinyGPT Language Model training step", () -> testEndToEndTraining());
+    }
+
+    private static void assertEquals(Object expected, Object actual, String message) {
+        if (!expected.equals(actual)) {
+            throw new AssertionError(message + " - Expected: " + expected + ", Got: " + actual);
+        }
+    }
+
+    private static void testDatasetAndDataLoader() {
+        List<String> vocab = List.of("a", "b", "c", "d", "e", "f", "g");
+        CharacterTokenizer tokenizer = new CharacterTokenizer(vocab);
+        TextDataset dataset = new TextDataset("abcdefg", tokenizer);
+        
+        DataLoader loader = new DataLoader(dataset, 2, 3, false);
+        assertEquals(2, loader.getNumBatches(), "Number of batches calculation failed");
+
+        Tensor[] batch = loader.nextBatch();
+        Tensor x = batch[0];
+        Tensor y = batch[1];
+
+        assertEquals(2, x.getShape()[0], "Batch dimension mismatch");
+        assertEquals(3, x.getShape()[1], "Seq len dimension mismatch");
+        assertEquals(2, y.getShape()[0], "Target batch dimension mismatch");
+        assertEquals(3, y.getShape()[1], "Target seq len dimension mismatch");
+
+        // Verify target values are shifted by 1
+        float[] xVal = x.getData();
+        float[] yVal = y.getData();
+        for (int i = 0; i < xVal.length; i++) {
+            assertEquals(xVal[i] + 1.0f, yVal[i], "Target is not shifted version of input");
+        }
+    }
+
+    private static void testCrossEntropyLoss() {
+        float[] logitsData = {
+            1.0f, 2.0f, 3.0f,
+            0.5f, -0.5f, 1.5f
+        };
+        Tensor logits = new Tensor(logitsData, new int[]{2, 3});
+        logits.setRequiresGrad(true);
+
+        float[] targetsData = {2.0f, 0.0f};
+        Tensor targets = new Tensor(targetsData, new int[]{2});
+
+        CrossEntropyLoss lossFn = new CrossEntropyLoss();
+        Tensor loss = lossFn.forward(logits, targets);
+
+        float expectedLoss = 0.9076f;
+        float actualLoss = loss.getData()[0];
+        
+        TestReporter.logMetric("Expected Loss", expectedLoss);
+        TestReporter.logMetric("Actual Loss", actualLoss);
+        
+        if (Math.abs(expectedLoss - actualLoss) > 1e-3f) {
+            throw new AssertionError("Cross entropy loss calculation mismatch. Expected: " + expectedLoss + ", got: " + actualLoss);
+        }
+
+        loss.backward();
+        float[] grads = logits.getGrad();
+        if (grads == null) {
+            throw new AssertionError("Gradients were not computed for logits");
+        }
+
+        TestReporter.logMetric("Logits gradient sample 0_0", grads[0]);
+        TestReporter.logMetric("Logits gradient sample 0_2", grads[2]);
+
+        if (Math.abs(grads[0] - 0.045f) > 1e-2f || Math.abs(grads[2] - (-0.167f)) > 1e-2f) {
+            throw new AssertionError("Gradient computation mismatch for CrossEntropyLoss");
+        }
+    }
+
+    private static void testAdamWOptimizer() {
+        Tensor p = new Tensor(new float[]{1.0f, 2.0f}, new int[]{2});
+        p.setRequiresGrad(true);
+        p.accumulateGrad(new float[]{0.1f, -0.2f});
+
+        AdamW optimizer = new AdamW(List.of(p), 0.1f, 0.9f, 0.999f, 1e-8f, 0.0f);
+        optimizer.step();
+
+        float expectedVal = 0.9f;
+        float actualVal = p.getData()[0];
+        
+        TestReporter.logMetric("Weight after step expected", expectedVal);
+        TestReporter.logMetric("Weight after step actual", actualVal);
+
+        if (Math.abs(expectedVal - actualVal) > 1e-3f) {
+            throw new AssertionError("AdamW optimizer weight update mismatch");
+        }
+    }
+
+    private static void testModelCheckpoint() throws IOException {
+        com.tinymodelz.nn.Module testModule = new com.tinymodelz.nn.Module() {
+            private final Embedding embedding = new Embedding(10, 8);
+            
+            {
+                for (Tensor p : embedding.getParameters()) registerParameter(p);
+            }
+
+            @Override
+            public Tensor forward(Tensor... inputs) {
+                return embedding.forward(inputs[0]);
+            }
+        };
+
+        File tempDir = new File("target/temp_checkpoint_" + System.currentTimeMillis());
+        try {
+            Checkpoint.saveCheckpoint(testModule, tempDir);
+
+            float[] origData = testModule.getParameters().get(0).getData();
+            float firstVal = origData[0];
+            origData[0] = firstVal + 10.0f;
+
+            Checkpoint.loadCheckpoint(testModule, tempDir);
+            assertEquals(firstVal, origData[0], "Checkpoint reload did not restore weight value");
+        } finally {
+            if (tempDir.exists()) {
+                File[] files = tempDir.listFiles();
+                if (files != null) {
+                    for (File f : files) f.delete();
+                }
+                tempDir.delete();
+            }
+        }
+    }
+
+    private static void testEndToEndTraining() {
+        List<String> vocab = List.of("h", "e", "l", "o", " ", "t", "r", "a", "i", "n");
+        CharacterTokenizer tokenizer = new CharacterTokenizer(vocab);
+        TextDataset dataset = new TextDataset("hello train hello train", tokenizer);
+        DataLoader loader = new DataLoader(dataset, 1, 4, false);
+
+        int vocabSize = tokenizer.getVocabSize();
+        int embedDim = 8;
+        int numHeads = 2;
+
+        com.tinymodelz.nn.Module model = new com.tinymodelz.nn.Module() {
+            private final Embedding embedding = new Embedding(vocabSize, embedDim);
+            private final TransformerBlock transformer = new TransformerBlock(embedDim, numHeads, 0.0f);
+            private final Linear lmHead = new Linear(embedDim, vocabSize);
+
+            {
+                for (Tensor p : embedding.getParameters()) registerParameter(p);
+                for (Tensor p : transformer.getParameters()) registerParameter(p);
+                for (Tensor p : lmHead.getParameters()) registerParameter(p);
+            }
+
+            @Override
+            public Tensor forward(Tensor... inputs) {
+                Tensor idx = inputs[0];
+                Tensor emb = embedding.forward(idx);
+                Tensor trans = transformer.forward(emb);
+                
+                int[] shape = trans.getShape();
+                int B = shape[0];
+                int T = shape[1];
+                int C = shape[2];
+                
+                Tensor trans2d = trans.reshape(B * T, C);
+                Tensor logits2d = lmHead.forward(trans2d);
+                return logits2d.reshape(B, T, vocabSize);
+            }
+        };
+
+        AdamW optimizer = new AdamW(model.getParameters(), 0.01f);
+        CrossEntropyLoss lossFn = new CrossEntropyLoss();
+
+        Tensor[] batch = loader.nextBatch();
+        Tensor x = batch[0];
+        Tensor y = batch[1];
+
+        // 1. First step
+        optimizer.zeroGrad();
+        Tensor logits1 = model.forward(x);
+        Tensor loss1 = lossFn.forward(logits1, y);
+        loss1.backward();
+        optimizer.step();
+
+        float firstLoss = loss1.getData()[0];
+
+        // 2. Second step
+        optimizer.zeroGrad();
+        Tensor logits2 = model.forward(x);
+        Tensor loss2 = lossFn.forward(logits2, y);
+        loss2.backward();
+        optimizer.step();
+
+        float secondLoss = loss2.getData()[0];
+
+        TestReporter.logMetric("First loss value", firstLoss);
+        TestReporter.logMetric("Second loss value", secondLoss);
+
+        if (secondLoss >= firstLoss) {
+            throw new AssertionError("Training step failed: Loss did not decrease. First: " + firstLoss + ", Second: " + secondLoss);
+        }
+    }
+}
