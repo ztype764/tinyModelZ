@@ -73,6 +73,9 @@ public class Embedding extends Module {
                 List.of(weight),
                 "embedding",
                 (gradOutput) -> {
+                    if (weight.getGrad() == null) {
+                        weight.accumulateGrad(new float[weight.getData().length]);
+                    }
                     float[] weightGrad = weight.getGrad();
                     int weightOffset = weight.offset();
                     for (int i = 0; i < numElements; i++) {

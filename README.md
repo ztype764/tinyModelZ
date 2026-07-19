@@ -12,10 +12,14 @@ tinyModelZ/
 │   ├── main/java/com/tinymodelz/
 │   │   ├── math/
 │   │   │   ├── Vector.java             # 1D vector operations (norm, dot, softmax)
-│   │   │   ├── Matrix.java             # 2D matrix operations (dot product, transpose, bias)
+│   │   │   ├── Matrix.java             # 2D matrix operations (dot product, transpose, bias, GPU dispatch)
 │   │   │   ├── RandomInitializer.java  # Xavier/He parameter initializers
 │   │   │   ├── Tensor.java             # N-dimensional autograd tensor with shape/stride tracking
+│   │   │   ├── Device.java             # Compute device target enum (CPU, GPU)
+│   │   │   ├── DeviceManager.java      # Hardware compute device state manager
 │   │   │   └── MathIO.java             # TMA1/TMAT binary weight saving/loading
+│   │   ├── gpu/
+│   │   │   └── GPUMathEngine.java      # OpenCL JNI native GPU hardware acceleration engine
 │   │   ├── nn/
 │   │   │   ├── Module.java             # Abstract base neural network module
 │   │   │   ├── Linear.java             # Fully connected linear layer
@@ -81,9 +85,28 @@ The `Generator` class supports autoregressive generation using:
 
 ---
 
+## ⚡ GPU Powered Training (`com.tinymodelz.gpu`)
+* **OpenCL Compute Backend**: Native hardware-accelerated matrix multiplication (`libtinymodelz_gpu.so`) built directly into the framework.
+* **Automatic Hardware Probing**: Probes system for NVIDIA (CUDA/OpenCL), AMD (ROCm/OpenCL), or Intel GPUs at startup.
+* **Seamless Dynamic Switch**: Configure runtime device execution target via `DeviceManager.setDevice(Device.GPU)`.
+* **Zero-Downtime CPU Fallback**: Automatically falls back to multi-threaded CPU matrix operations if GPU driver or hardware is absent.
+
+---
+
 ## 🚀 How to Build and Run Tests
 
 You can build the project and run the complete test suite using the provided `build.sh` script:
+
+```bash
+# Compile and run full test suite (including GPU acceleration checks)
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java -Dexec.mainClass="com.tinymodelz.TestRunner" -Dexec.classpathScope="test"
+
+# Run TinyGPT training pipeline on GPU (NVIDIA GeForce 940MX via OpenCL)
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" -Dexec.args="TinyStories-valid.txt 5 16 64 gpu"
+
+# Run TinyGPT training pipeline on CPU
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" -Dexec.args="TinyStories-valid.txt 5 16 64 cpu"
+```
 
 ```bash
 bash build.sh

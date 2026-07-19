@@ -73,6 +73,15 @@ public class CharacterTokenizer implements Tokenizer {
      * @param vocab the vocabulary as a list of strings (each typically a single character)
      * @throws IllegalArgumentException if the vocabulary is null or empty
      */
+    private final List<String> multiCharTokens;
+
+    /**
+     * Constructs a CharacterTokenizer with the provided vocabulary of character strings.
+     * Special tokens ([PAD], [UNK], [CLS], [SEP], [MASK]) will be verified and added if not present.
+     * 
+     * @param vocab the vocabulary as a list of strings (each typically a single character or multi-char special token)
+     * @throws IllegalArgumentException if the vocabulary is null or empty
+     */
     public CharacterTokenizer(List<String> vocab) {
         if (vocab == null || vocab.isEmpty()) {
             throw new IllegalArgumentException("Vocabulary cannot be null or empty");
@@ -89,9 +98,17 @@ public class CharacterTokenizer implements Tokenizer {
         }
 
         this.tokenToId = new HashMap<>(idToToken.size());
+        this.multiCharTokens = new ArrayList<>();
         for (int i = 0; i < idToToken.size(); i++) {
-            tokenToId.put(idToToken.get(i), i);
+            String token = idToToken.get(i);
+            tokenToId.put(token, i);
+            if (token.length() > 1 && !token.equals(padToken) && !token.equals(unkToken) &&
+                !token.equals(clsToken) && !token.equals(sepToken) && !token.equals(maskToken)) {
+                multiCharTokens.add(token);
+            }
         }
+        // Sort multi-char tokens by length descending to match longest multi-char token first
+        multiCharTokens.sort((a, b) -> Integer.compare(b.length(), a.length()));
 
         this.padId = tokenToId.get(padToken);
         this.unkId = tokenToId.get(unkToken);
@@ -99,8 +116,32 @@ public class CharacterTokenizer implements Tokenizer {
         this.sepId = tokenToId.get(sepToken);
         this.maskId = tokenToId.get(maskToken);
 
-        logger.info("Initializing CharacterTokenizer. Vocab size: {}, Special tokens: PAD={}, UNK={}, CLS={}, SEP={}, MASK={}",
-                idToToken.size(), padId, unkId, clsId, sepId, maskId);
+        logger.info("Initializing CharacterTokenizer. Vocab size: {}, Multi-char tokens: {}, Special tokens: PAD={}, UNK={}, CLS={}, SEP={}, MASK={}",
+                idToToken.size(), multiCharTokens, padId, unkId, clsId, sepId, maskId);
+    }
+
+    /**
+     * Automatically builds a CharacterTokenizer from raw text by scanning all unique characters
+     * and adding specified custom tokens (such as "<|endoftext|>").
+     *
+     * @param text raw corpus text
+     * @param customTokens optional multi-character or control tokens to register in the vocabulary
+     * @return constructed CharacterTokenizer
+     */
+    public static CharacterTokenizer fromText(String text, List<String> customTokens) {
+        List<String> vocab = new ArrayList<>();
+        if (customTokens != null) {
+            vocab.addAll(customTokens);
+        }
+        Set<String> seen = new HashSet<>(vocab);
+
+        for (int i = 0; i < text.length(); i++) {
+            String cStr = String.valueOf(text.charAt(i));
+            if (seen.add(cStr)) {
+                vocab.add(cStr);
+            }
+        }
+        return new CharacterTokenizer(vocab);
     }
 
     @Override
@@ -110,20 +151,33 @@ public class CharacterTokenizer implements Tokenizer {
         }
 
         logger.debug("Tokenizing text at character level: '{}'", text);
-        List<String> tokens = new ArrayList<>(text.length());
+        List<String> tokens = new ArrayList<>();
         
-        for (int i = 0; i < text.length(); i++) {
+        int i = 0;
+        int len = text.length();
+        while (i < len) {
+            boolean matchedMulti = false;
+            for (String multi : multiCharTokens) {
+                if (text.startsWith(multi, i)) {
+                    tokens.add(multi);
+                    i += multi.length();
+                    matchedMulti = true;
+                    break;
+                }
+            }
+            if (matchedMulti) {
+                continue;
+            }
+
             String cStr = String.valueOf(text.charAt(i));
             if (tokenToId.containsKey(cStr)) {
-                logger.trace("Matched character: '{}' -> ID={}", cStr, tokenToId.get(cStr));
                 tokens.add(cStr);
             } else {
-                logger.trace("Unrecognized character: '{}' -> mapping to {}", cStr, unkToken);
                 tokens.add(unkToken);
             }
+            i++;
         }
 
-        logger.debug("Final character token list: {}", tokens);
         return tokens;
     }
 

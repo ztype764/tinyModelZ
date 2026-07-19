@@ -228,7 +228,34 @@ public class Matrix {
             throw new IllegalArgumentException("Inner matrix dimensions must match for multiplication: " +
                     "this.cols=" + this.cols + ", other.rows=" + (other != null ? other.rows : "null"));
         }
+
+        // --- GPU Hardware Compute Dispatch ---
+        if (DeviceManager.isGpuActive()) {
+            int m = this.rows;
+            int k = this.cols;
+            int n = other.cols;
+
+            float[] flatA = new float[m * k];
+            for (int i = 0; i < m; i++) {
+                System.arraycopy(this.data[i], 0, flatA, i * k, k);
+            }
+
+            float[] flatB = new float[k * n];
+            for (int i = 0; i < k; i++) {
+                System.arraycopy(other.data[i], 0, flatB, i * n, n);
+            }
+
+            float[] flatC = new float[m * n];
+            if (com.tinymodelz.gpu.GPUMathEngine.matmul(flatA, flatB, flatC, m, n, k)) {
+                float[][] result = new float[m][n];
+                for (int i = 0; i < m; i++) {
+                    System.arraycopy(flatC, i * n, result[i], 0, n);
+                }
+                return new Matrix(result);
+            }
+        }
         
+        // --- CPU Fallback Execution ---
         float[][] result = new float[this.rows][other.cols];
         float[][] otherT = other.transpose().data; // Transposing other speeds up cache locality
         

@@ -53,12 +53,24 @@ public class TestRunner {
             com.tinymodelz.nn.TransformerTest.runTests();
             TestReporter.endSuite();
 
+            TestReporter.startSuite("TinyGPT Language Model");
+            com.tinymodelz.nn.TinyGPTTest.runTests();
+            TestReporter.endSuite();
+
             TestReporter.startSuite("Language Model Training & Optimization");
             com.tinymodelz.train.TrainingTest.runTests();
             TestReporter.endSuite();
 
             TestReporter.startSuite("Autoregressive Inference & Sampling");
             com.tinymodelz.inference.GeneratorTest.runTests();
+            TestReporter.endSuite();
+
+            TestReporter.startSuite("TinyStories Training Pipeline End-to-End");
+            com.tinymodelz.train.TinyStoriesPipelineTest.runTests();
+            TestReporter.endSuite();
+
+            TestReporter.startSuite("OpenCL GPU Hardware Compute Engine");
+            com.tinymodelz.gpu.GPUTest.runTests();
             TestReporter.endSuite();
 
             // Generate visual report

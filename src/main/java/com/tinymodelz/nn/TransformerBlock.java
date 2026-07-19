@@ -26,10 +26,22 @@ public class TransformerBlock extends Module {
      * @param dropoutProb dropout probability rate
      */
     public TransformerBlock(int embedDim, int numHeads, float dropoutProb) {
+        this(embedDim, numHeads, 4 * embedDim, dropoutProb);
+    }
+
+    /**
+     * Constructs a Transformer block with custom feed-forward dimension.
+     * 
+     * @param embedDim embedding size (C)
+     * @param numHeads number of attention heads (H)
+     * @param feedForwardDim feed-forward hidden dimension (d_ff)
+     * @param dropoutProb dropout probability rate
+     */
+    public TransformerBlock(int embedDim, int numHeads, int feedForwardDim, float dropoutProb) {
         this.ln1 = new LayerNorm(embedDim);
         this.attn = new MultiHeadAttention(embedDim, numHeads, dropoutProb);
         this.ln2 = new LayerNorm(embedDim);
-        this.mlp = new FeedForward(embedDim, dropoutProb);
+        this.mlp = new FeedForward(embedDim, feedForwardDim, dropoutProb);
 
         // Register all parameters
         for (Tensor p : ln1.getParameters()) registerParameter(p);

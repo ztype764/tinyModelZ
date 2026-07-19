@@ -398,10 +398,18 @@ public class Tensor {
         int outSize = computeSize(outShape);
         float[] outData = new float[outSize];
         
-        for (int i = 0; i < outSize; i++) {
-            int idxA = getBroadcastedFlatIndex(i, outShape, this.shape, this.strides);
-            int idxB = getBroadcastedFlatIndex(i, outShape, other.shape, other.strides);
-            outData[i] = this.data[this.offset + idxA] + other.data[other.offset + idxB];
+        if (Arrays.equals(this.shape, other.shape) && isContiguous() && other.isContiguous()) {
+            int offA = this.offset;
+            int offB = other.offset;
+            java.util.stream.IntStream.range(0, outSize).parallel().forEach(i -> {
+                outData[i] = this.data[offA + i] + other.data[offB + i];
+            });
+        } else {
+            for (int i = 0; i < outSize; i++) {
+                int idxA = getBroadcastedFlatIndex(i, outShape, this.shape, this.strides);
+                int idxB = getBroadcastedFlatIndex(i, outShape, other.shape, other.strides);
+                outData[i] = this.data[this.offset + idxA] + other.data[other.offset + idxB];
+            }
         }
         
         Tensor result = new Tensor(outData, outShape);
@@ -426,10 +434,18 @@ public class Tensor {
         int outSize = computeSize(outShape);
         float[] outData = new float[outSize];
         
-        for (int i = 0; i < outSize; i++) {
-            int idxA = getBroadcastedFlatIndex(i, outShape, this.shape, this.strides);
-            int idxB = getBroadcastedFlatIndex(i, outShape, other.shape, other.strides);
-            outData[i] = this.data[this.offset + idxA] - other.data[other.offset + idxB];
+        if (Arrays.equals(this.shape, other.shape) && isContiguous() && other.isContiguous()) {
+            int offA = this.offset;
+            int offB = other.offset;
+            java.util.stream.IntStream.range(0, outSize).parallel().forEach(i -> {
+                outData[i] = this.data[offA + i] - other.data[offB + i];
+            });
+        } else {
+            for (int i = 0; i < outSize; i++) {
+                int idxA = getBroadcastedFlatIndex(i, outShape, this.shape, this.strides);
+                int idxB = getBroadcastedFlatIndex(i, outShape, other.shape, other.strides);
+                outData[i] = this.data[this.offset + idxA] - other.data[other.offset + idxB];
+            }
         }
         
         Tensor result = new Tensor(outData, outShape);
@@ -458,10 +474,18 @@ public class Tensor {
         int outSize = computeSize(outShape);
         float[] outData = new float[outSize];
         
-        for (int i = 0; i < outSize; i++) {
-            int idxA = getBroadcastedFlatIndex(i, outShape, this.shape, this.strides);
-            int idxB = getBroadcastedFlatIndex(i, outShape, other.shape, other.strides);
-            outData[i] = this.data[this.offset + idxA] * other.data[other.offset + idxB];
+        if (Arrays.equals(this.shape, other.shape) && isContiguous() && other.isContiguous()) {
+            int offA = this.offset;
+            int offB = other.offset;
+            java.util.stream.IntStream.range(0, outSize).parallel().forEach(i -> {
+                outData[i] = this.data[offA + i] * other.data[offB + i];
+            });
+        } else {
+            for (int i = 0; i < outSize; i++) {
+                int idxA = getBroadcastedFlatIndex(i, outShape, this.shape, this.strides);
+                int idxB = getBroadcastedFlatIndex(i, outShape, other.shape, other.strides);
+                outData[i] = this.data[this.offset + idxA] * other.data[other.offset + idxB];
+            }
         }
         
         Tensor result = new Tensor(outData, outShape);
@@ -535,21 +559,65 @@ public class Tensor {
         Tensor ACont = this.toContiguous();
         Tensor BCont = other.toContiguous();
         
-        for (int b = 0; b < numBatches; b++) {
-            int offsetA = b * M * K;
-            int offsetB = b * K * N;
-            int offsetOut = b * M * N;
-            
-            for (int i = 0; i < M; i++) {
-                for (int j = 0; j < N; j++) {
-                    float sum = 0.0f;
-                    for (int k = 0; k < K; k++) {
-                        sum += ACont.data[offsetA + i * K + k] * BCont.data[offsetB + k * N + j];
-                    }
-                    outData[offsetOut + i * N + j] = sum;
+        // --- GPU Acceleration Dispatch ---
+        if (DeviceManager.isGpuActive()) {
+            boolean gpuSuccess = true;
+            for (int b = 0; b < numBatches; b++) {
+                float[] subA = new float[M * K];
+                float[] subB = new float[K * N];
+                float[] subOut = new float[M * N];
+
+                System.arraycopy(ACont.data, b * M * K, subA, 0, M * K);
+                System.arraycopy(BCont.data, b * K * N, subB, 0, K * N);
+
+                if (com.tinymodelz.gpu.GPUMathEngine.matmul(subA, subB, subOut, M, N, K)) {
+                    System.arraycopy(subOut, 0, outData, b * M * N, M * N);
+                } else {
+                    gpuSuccess = false;
+                    break;
                 }
             }
+            if (gpuSuccess) {
+                Tensor result = new Tensor(outData, outShape);
+                if (this.requiresGrad || other.requiresGrad) {
+                    result.requiresGrad = true;
+                    result.creators = List.of(this, other);
+                    result.opName = "matmul";
+                    result.backwardFn = (gradOutput) -> {
+                        Tensor gradOutTensor = new Tensor(gradOutput, outShape);
+                        if (this.requiresGrad) {
+                            Tensor dX = gradOutTensor.matmul(other.transpose(rank - 2, rank - 1));
+                            this.accumulateGrad(dX.data);
+                        }
+                        if (other.requiresGrad) {
+                            Tensor dY = this.transpose(rank - 2, rank - 1).matmul(gradOutTensor);
+                            other.accumulateGrad(dY.data);
+                        }
+                    };
+                }
+                return result;
+            }
         }
+
+        // --- CPU Execution Path ---
+        int totalRows = numBatches * M;
+        java.util.stream.IntStream.range(0, totalRows).parallel().forEach(bi -> {
+            int b = bi / M;
+            int i = bi % M;
+
+            int offsetA = b * M * K + i * K;
+            int offsetB = b * K * N;
+            int offsetOut = b * M * N + i * N;
+
+            for (int k = 0; k < K; k++) {
+                float aVal = ACont.data[offsetA + k];
+                if (aVal == 0.0f) continue;
+                int bRowOffset = offsetB + k * N;
+                for (int j = 0; j < N; j++) {
+                    outData[offsetOut + j] += aVal * BCont.data[bRowOffset + j];
+                }
+            }
+        });
         
         Tensor result = new Tensor(outData, outShape);
         if (this.requiresGrad || other.requiresGrad) {

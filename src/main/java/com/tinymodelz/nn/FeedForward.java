@@ -22,8 +22,19 @@ public class FeedForward extends Module {
      * @param dropoutProb dropout rate
      */
     public FeedForward(int embedDim, float dropoutProb) {
-        this.cFc = new Linear(embedDim, 4 * embedDim);
-        this.cProj = new Linear(4 * embedDim, embedDim);
+        this(embedDim, 4 * embedDim, dropoutProb);
+    }
+
+    /**
+     * Constructs a Feed-Forward network with custom hidden dimension.
+     * 
+     * @param embedDim the embedding dimension size (C)
+     * @param hiddenDim the hidden layer dimension size (d_ff)
+     * @param dropoutProb dropout rate
+     */
+    public FeedForward(int embedDim, int hiddenDim, float dropoutProb) {
+        this.cFc = new Linear(embedDim, hiddenDim);
+        this.cProj = new Linear(hiddenDim, embedDim);
         this.dropout = new Dropout(dropoutProb);
 
         // Register parameters

@@ -108,32 +108,45 @@ public class LayerNorm extends Module {
                 List.of(x, weight, bias),
                 "layernorm",
                 (gradOutput) -> {
-                    float[] wGrad = weight.getGrad();
-                    float[] bGrad = bias.getGrad();
-                    float[] xGrad = x.getGrad();
-                    
                     int wOffset = weight.offset();
                     int bOffset = bias.offset();
-                    int xGradOffset = x.offset();
 
                     // Accumulate parameter gradients
-                    for (int i = 0; i < N; i++) {
-                        int rowOffset = i * D;
-                        for (int j = 0; j < D; j++) {
-                            float dy = gradOutput[rowOffset + j];
-                            float xh = xHat[rowOffset + j];
-                            
-                            if (weight.requiresGrad()) {
-                                wGrad[wOffset + j] += dy * xh;
-                            }
-                            if (bias.requiresGrad()) {
-                                bGrad[bOffset + j] += dy;
+                    if (weight.requiresGrad() || bias.requiresGrad()) {
+                        float[] wGrad = weight.getGrad();
+                        float[] bGrad = bias.getGrad();
+                        if (weight.requiresGrad() && wGrad == null) {
+                            weight.accumulateGrad(new float[weight.getData().length]);
+                            wGrad = weight.getGrad();
+                        }
+                        if (bias.requiresGrad() && bGrad == null) {
+                            bias.accumulateGrad(new float[bias.getData().length]);
+                            bGrad = bias.getGrad();
+                        }
+                        for (int i = 0; i < N; i++) {
+                            int rowOffset = i * D;
+                            for (int j = 0; j < D; j++) {
+                                float dy = gradOutput[rowOffset + j];
+                                float xh = xHat[rowOffset + j];
+                                
+                                if (weight.requiresGrad()) {
+                                    wGrad[wOffset + j] += dy * xh;
+                                }
+                                if (bias.requiresGrad()) {
+                                    bGrad[bOffset + j] += dy;
+                                }
                             }
                         }
                     }
 
                     // Compute input gradient dX
                     if (x.requiresGrad()) {
+                        if (x.getGrad() == null) {
+                            x.accumulateGrad(new float[x.getData().length]);
+                        }
+                        float[] xGrad = x.getGrad();
+                        int xGradOffset = x.offset();
+
                         for (int i = 0; i < N; i++) {
                             int rowOffset = i * D;
                             float stdInv = invStd[i];

@@ -124,4 +124,13 @@ public class AdamW {
     public int getStepCount() {
         return stepCount;
     }
+
+    /**
+     * Gets the configured learning rate (eta).
+     * 
+     * @return the learning rate
+     */
+    public float getLearningRate() {
+        return lr;
+    }
 }

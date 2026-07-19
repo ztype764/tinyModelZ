@@ -5,6 +5,7 @@
 - [x] Vector operations
 - [x] Random initialization
 - [x] File serialization
+- [x] OpenCL GPU Hardware Acceleration (`DeviceManager`, `GPUMathEngine`, `libtinymodelz_gpu.so`, automatic CPU fallback)
 
 ## 🧠 Tensor Engine
 - [x] Tensors
@@ -25,6 +26,7 @@
 - [x] Feed-forward network
 - [x] Residual connections
 - [x] Decoder block
+- [x] TinyGPT complete model (Token + Positional Embedding → N×TransformerBlock → LayerNorm → LM Head)
 
 ## 🔤 Tokenizer
 - [x] Character tokenizer
@@ -36,6 +38,7 @@
 - [x] Cross-entropy loss
 - [x] Adam optimizer (AdamW style with momentum & weight decay)
 - [x] Checkpoints (binary TMAT serialization)
+- [x] TinyGPT End-to-End Training Pipeline on `TinyStories-valid.txt` (Dataset streaming, Auto-vocab, Overfit test, Multi-epoch Trainer, Loss/PPL/tok-sec metrics, Autoregressive sampling)
 
 ## 🔮 Inference
 - [x] Greedy decoding

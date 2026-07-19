@@ -74,6 +74,9 @@ public class Dropout extends Module {
                 List.of(x),
                 "dropout",
                 (gradOutput) -> {
+                    if (x.getGrad() == null) {
+                        x.accumulateGrad(new float[x.getData().length]);
+                    }
                     float[] xGrad = x.getGrad();
                     int xGradOffset = x.offset();
                     for (int i = 0; i < size; i++) {
