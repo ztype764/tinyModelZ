@@ -97,6 +97,20 @@ public class Generator {
             Tensor contLogits = logits.toContiguous();
             System.arraycopy(contLogits.getData(), contLogits.offset() + lastTokenOffset, lastLogits, 0, vocabSize);
 
+            // Apply Repetition Penalty (Phase 6)
+            float repetitionPenalty = 1.15f; // Default 1.15 repetition penalty factor
+            if (repetitionPenalty > 1.0f) {
+                for (int previousId : tokenIds) {
+                    if (previousId >= 0 && previousId < vocabSize) {
+                        if (lastLogits[previousId] < 0) {
+                            lastLogits[previousId] *= repetitionPenalty;
+                        } else {
+                            lastLogits[previousId] /= repetitionPenalty;
+                        }
+                    }
+                }
+            }
+
             // Sample next token ID
             int nextTokenId = sample(lastLogits, temperature, topK, topP);
             tokenIds.add(nextTokenId);

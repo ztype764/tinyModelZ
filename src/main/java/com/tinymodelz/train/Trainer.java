@@ -10,23 +10,13 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * <h3>Trainer</h3>
  *
- * <p>Orchestrates training, evaluation, overfit testing, checkpointing,
- * metrics tracking, and autoregressive text generation for TinyGPT models.</p>
- *
- * <h4>Key Responsibilities:</h4>
- * <ul>
- *   <li><b>Forward Pass:</b> Computes model logits $\mathbf{z} \in \mathbb{R}^{B \times T \times |V|}$ from token input sequences.</li>
- *   <li><b>Loss Function:</b> Evaluates Cross-Entropy Loss $\mathcal{L} = -\frac{1}{N}\sum \log P(y_i | x_i)$ against target labels.</li>
- *   <li><b>Backward Pass:</b> Calculates gradients $\frac{\partial \mathcal{L}}{\partial \theta}$ using Autograd backpropagation.</li>
- *   <li><b>Optimizer Step:</b> Updates weights $\theta_{t+1} = \theta_t - \eta \cdot m_t / (\sqrt{v_t} + \epsilon) - \eta \lambda \theta_t$ via AdamW.</li>
- *   <li><b>Metrics Computation:</b> Tracks Loss, Perplexity $\text{PPL} = e^{\mathcal{L}}$, Throughput ($\text{tokens/sec}$), and ETA.</li>
- *   <li><b>Checkpoint Persistence:</b> Persists model parameters to binary TMAT files at key checkpoints.</li>
- *   <li><b>Autoregressive Generation:</b> Evaluates model text generation capabilities periodically after epochs.</li>
- * </ul>
+ * <p>Orchestrates training, evaluation, overfit testing, gradient clipping,
+ * learning rate scheduling, profiling, checkpointing, and text generation.</p>
  */
 public class Trainer {
 
@@ -37,11 +27,14 @@ public class Trainer {
     private final AdamW optimizer;
     private final CrossEntropyLoss lossFn;
     private final Generator generator;
+    private final Profiler profiler;
+
+    private float maxGradNorm = 1.0f; // Default L2 gradient clipping threshold
 
     /**
-     * Constructs a Trainer instance for managing a TinyGPT model lifecycle.
+     * Constructs a Trainer instance.
      *
-     * @param model     the TinyGPT model instance
+     * @param model     the TinyGPT model
      * @param tokenizer the dataset tokenizer
      * @param optimizer the AdamW optimizer
      * @param lossFn    the CrossEntropyLoss criterion
@@ -55,16 +48,88 @@ public class Trainer {
         this.optimizer = optimizer;
         this.lossFn = lossFn;
         this.generator = new Generator(42L);
+        this.profiler = new Profiler();
     }
 
     /**
-     * Executes an overfit test on a single batch until the loss drops below a target value
-     * or maximum iterations are reached.
+     * Sets the maximum gradient L2 norm for gradient clipping.
      *
-     * @param loader     DataLoader containing token batches
-     * @param maxSteps   maximum training steps to run
-     * @param targetLoss loss threshold to achieve
-     * @return final achieved loss value
+     * @param maxGradNorm clipping threshold (e.g. 1.0f)
+     */
+    public void setMaxGradNorm(float maxGradNorm) {
+        this.maxGradNorm = maxGradNorm;
+    }
+
+    /**
+     * Performs L2 gradient clipping across all trainable model parameters.
+     *
+     * @param maxNorm maximum allowed global gradient norm
+     * @return original unclipped global gradient norm
+     */
+    public float clipGradients(float maxNorm) {
+        if (maxNorm <= 0.0f) return 0.0f;
+
+        List<Tensor> params = model.getParameters();
+        double sumSq = 0.0;
+
+        for (Tensor p : params) {
+            if (!p.requiresGrad()) continue;
+            float[] grad = p.getGrad();
+            if (grad == null) continue;
+            for (float g : grad) {
+                sumSq += g * g;
+            }
+        }
+
+        float totalNorm = (float) Math.sqrt(sumSq);
+        if (totalNorm > maxNorm) {
+            float scale = maxNorm / (totalNorm + 1e-6f);
+            for (Tensor p : params) {
+                if (!p.requiresGrad()) continue;
+                float[] grad = p.getGrad();
+                if (grad == null) continue;
+                for (int i = 0; i < grad.length; i++) {
+                    grad[i] *= scale;
+                }
+            }
+        }
+        return totalNorm;
+    }
+
+    /**
+     * Evaluates the model loss and perplexity on a validation dataset.
+     *
+     * @param valLoader DataLoader configured with validation split
+     * @return validation loss value
+     */
+    public float evaluate(DataLoader valLoader) {
+        if (valLoader == null) return Float.MAX_VALUE;
+
+        model.eval();
+        valLoader.reset();
+
+        float totalLoss = 0.0f;
+        int count = 0;
+
+        while (valLoader.hasNext()) {
+            Tensor[] batch = valLoader.nextBatch();
+            Tensor x = batch[0];
+            Tensor y = batch[1];
+
+            Tensor logits = model.forward(x);
+            Tensor loss = lossFn.forward(logits, y);
+            totalLoss += loss.getData()[0];
+            count++;
+        }
+
+        float avgValLoss = count > 0 ? totalLoss / count : Float.MAX_VALUE;
+        float valPpl = (float) Math.exp(avgValLoss);
+        logger.info(String.format("=== Validation Evaluation === Loss: %.4f | PPL: %.2f (%d batches)", avgValLoss, valPpl, count));
+        return avgValLoss;
+    }
+
+    /**
+     * Executes an overfit test on a single batch.
      */
     public float trainOverfit(DataLoader loader, int maxSteps, float targetLoss) {
         logger.info("==================================================");
@@ -89,6 +154,8 @@ public class Trainer {
             Tensor logits = model.forward(x);
             Tensor loss = lossFn.forward(logits, y);
             loss.backward();
+
+            clipGradients(maxGradNorm);
             optimizer.step();
 
             currentLoss = loss.getData()[0];
@@ -104,21 +171,14 @@ public class Trainer {
                 break;
             }
         }
-
         return currentLoss;
     }
 
     /**
-     * Executes full multi-epoch training over a dataset.
-     *
-     * @param loader          DataLoader configured with full dataset
-     * @param epochs          number of full training epochs
-     * @param checkpointDir   directory path to save model checkpoints after each epoch
-     * @param prompt          text prompt for post-epoch generation sampling
-     * @param generateTokens  number of new tokens to generate post-epoch
-     * @param logInterval     batch frequency interval for printing detailed metrics
+     * Executes full multi-epoch training over a dataset with profiling, learning rate scheduling,
+     * validation evaluation, and best checkpoint retention.
      */
-    public void train(DataLoader loader, int epochs, File checkpointDir, String prompt, int generateTokens, int logInterval) {
+    public void train(DataLoader loader, DataLoader valLoader, int epochs, File checkpointDir, String prompt, int generateTokens, int logInterval) {
         logger.info("==================================================");
         logger.info(String.format("Starting Full Training: %d Epochs, Batch Size: %d, Context Length: %d",
                 epochs, loader.getBatchSize(), loader.getSeqLen()));
@@ -126,27 +186,45 @@ public class Trainer {
         logger.info("==================================================");
 
         int totalBatchesPerEpoch = loader.getNumBatches();
+        int totalTrainingSteps = totalBatchesPerEpoch * epochs;
+        int warmupSteps = (int) (totalTrainingSteps * 0.05f); // 5% warmup steps
+
+        LRScheduler scheduler = new LRScheduler(optimizer, optimizer.getLearningRate(), 1e-5f, warmupSteps, totalTrainingSteps);
+        float bestValLoss = Float.MAX_VALUE;
 
         for (int epoch = 1; epoch <= epochs; epoch++) {
+            profiler.resetEpoch();
             model.train();
             loader.reset();
 
-            long epochStartTime = System.currentTimeMillis();
+            long epochStartTimeNanos = System.nanoTime();
             float epochLossSum = 0.0f;
             int batchesProcessed = 0;
             int totalEpochTokens = 0;
 
             while (loader.hasNext()) {
-                long batchStartTime = System.currentTimeMillis();
+                long tPrepStart = System.nanoTime();
                 Tensor[] batch = loader.nextBatch();
                 Tensor x = batch[0];
                 Tensor y = batch[1];
+                profiler.addBatchPrepTime(System.nanoTime() - tPrepStart);
 
                 optimizer.zeroGrad();
+
+                long tFwdStart = System.nanoTime();
                 Tensor logits = model.forward(x);
                 Tensor loss = lossFn.forward(logits, y);
+                profiler.addForwardTime(System.nanoTime() - tFwdStart);
+
+                long tBwdStart = System.nanoTime();
                 loss.backward();
+                profiler.addBackwardTime(System.nanoTime() - tBwdStart);
+
+                long tOptStart = System.nanoTime();
+                clipGradients(maxGradNorm);
                 optimizer.step();
+                scheduler.step();
+                profiler.addOptimizerTime(System.nanoTime() - tOptStart);
 
                 float lossVal = loss.getData()[0];
                 epochLossSum += lossVal;
@@ -155,50 +233,69 @@ public class Trainer {
                 int batchTokens = x.getShape()[0] * x.getShape()[1];
                 totalEpochTokens += batchTokens;
 
-                long batchDurationMs = Math.max(1, System.currentTimeMillis() - batchStartTime);
-                float tokPerSec = (batchTokens / (batchDurationMs / 1000.0f));
-
                 if (batchesProcessed == 1 || batchesProcessed % logInterval == 0 || batchesProcessed == totalBatchesPerEpoch) {
                     float avgLossSoFar = epochLossSum / batchesProcessed;
                     float ppl = (float) Math.exp(avgLossSoFar);
 
-                    long elapsedEpochMs = System.currentTimeMillis() - epochStartTime;
+                    long elapsedMs = (System.nanoTime() - epochStartTimeNanos) / 1_000_000;
                     long remainingBatches = totalBatchesPerEpoch - batchesProcessed;
-                    float avgBatchTimeMs = (float) elapsedEpochMs / batchesProcessed;
-                    long etaMs = (long) (remainingBatches * avgBatchTimeMs);
+                    float avgBatchTimeMs = (float) elapsedMs / batchesProcessed;
+                    long etaSec = (long) ((remainingBatches * avgBatchTimeMs) / 1000.0f);
+                    float tokPerSec = (totalEpochTokens / (Math.max(1, elapsedMs) / 1000.0f));
 
                     logger.info(String.format(
                             "[Epoch %d/%d | Batch %d/%d] loss = %.4f | PPL = %.2f | lr = %.6f | tok/s = %.0f | ETA = %ds",
                             epoch, epochs, batchesProcessed, totalBatchesPerEpoch,
-                            avgLossSoFar, ppl, optimizer.getLearningRate(), tokPerSec, etaMs / 1000
+                            avgLossSoFar, ppl, scheduler.getLearningRate(), tokPerSec, etaSec
                     ));
                 }
             }
 
-            long totalEpochTimeMs = System.currentTimeMillis() - epochStartTime;
+            long totalEpochTimeNanos = System.nanoTime() - epochStartTimeNanos;
+            profiler.setTotalEpochTime(totalEpochTimeNanos);
+
             float avgEpochLoss = epochLossSum / batchesProcessed;
             float epochPpl = (float) Math.exp(avgEpochLoss);
-            float overallTokPerSec = (totalEpochTokens / (totalEpochTimeMs / 1000.0f));
+            float overallTokPerSec = (totalEpochTokens / ((totalEpochTimeNanos / 1_000_000.0f) / 1000.0f));
 
             logger.info("==================================================");
             logger.info(String.format("=== Epoch %d/%d Complete ===", epoch, epochs));
-            logger.info(String.format("  Avg Loss:      %.4f", avgEpochLoss));
+            logger.info(String.format("  Train Loss:    %.4f", avgEpochLoss));
             logger.info(String.format("  Perplexity:    %.2f", epochPpl));
-            logger.info(String.format("  Total Time:    %.2f s", totalEpochTimeMs / 1000.0f));
             logger.info(String.format("  Throughput:    %.0f tokens/sec", overallTokPerSec));
 
-            // --- Save Checkpoint ---
-            if (checkpointDir != null) {
-                File epochSaveDir = new File(checkpointDir, "epoch_" + epoch);
-                try {
-                    Checkpoint.saveCheckpoint(model, epochSaveDir);
-                    logger.info("  Checkpoint:    {}", epochSaveDir.getAbsolutePath());
-                } catch (IOException e) {
-                    logger.error("Failed to save checkpoint for epoch {}: {}", epoch, e.getMessage());
+            // --- Phase 1 Profiler Report ---
+            profiler.printSummary(epoch, epochs);
+
+            // --- Phase 4 Validation Evaluation ---
+            if (valLoader != null) {
+                float valLoss = evaluate(valLoader);
+                if (valLoss < bestValLoss && checkpointDir != null) {
+                    bestValLoss = valLoss;
+                    File bestDir = new File(checkpointDir, "best_checkpoint");
+                    try {
+                        Checkpoint.saveCheckpoint(model, bestDir);
+                        logger.info("  [NEW BEST MODEL] Saved best checkpoint to: {}", bestDir.getAbsolutePath());
+                    } catch (IOException e) {
+                        logger.error("Failed to save best checkpoint: {}", e.getMessage());
+                    }
                 }
             }
 
-            // --- Sample Text Generation ---
+            // --- Phase 4 Epoch Checkpoint ---
+            if (checkpointDir != null) {
+                long tChkStart = System.nanoTime();
+                File epochSaveDir = new File(checkpointDir, "epoch_" + epoch);
+                try {
+                    Checkpoint.saveCheckpoint(model, epochSaveDir);
+                    logger.info("  Saved Checkpoint: {}", epochSaveDir.getAbsolutePath());
+                } catch (IOException e) {
+                    logger.error("Failed to save epoch checkpoint: {}", e.getMessage());
+                }
+                profiler.addCheckpointTime(System.nanoTime() - tChkStart);
+            }
+
+            // --- Autoregressive Text Generation Sample ---
             if (prompt != null && generateTokens > 0) {
                 int eosCandidate = tokenizer.tokenToId("<|endoftext|>");
                 Integer eosId = (eosCandidate == tokenizer.tokenToId("[UNK]")) ? null : eosCandidate;
@@ -210,6 +307,13 @@ public class Trainer {
             }
             logger.info("==================================================");
         }
+    }
+
+    /**
+     * Legacy single-loader entry point for backwards compatibility.
+     */
+    public void train(DataLoader loader, int epochs, File checkpointDir, String prompt, int generateTokens, int logInterval) {
+        train(loader, null, epochs, checkpointDir, prompt, generateTokens, logInterval);
     }
 
     private RuntimeException idleDatasetException() {

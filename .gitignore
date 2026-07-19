@@ -27,3 +27,6 @@ lib/
 
 #Test Reports
 test_report.html
+
+#Training data
+checkpoints/

@@ -15,7 +15,7 @@ import java.util.Map;
 public class AdamW {
 
     private final Collection<Tensor> parameters;
-    private final float lr;
+    private float lr;
     private final float beta1;
     private final float beta2;
     private final float eps;
@@ -132,5 +132,14 @@ public class AdamW {
      */
     public float getLearningRate() {
         return lr;
+    }
+
+    /**
+     * Sets the active learning rate for dynamic scheduling.
+     * 
+     * @param newLr updated learning rate
+     */
+    public void setLearningRate(float newLr) {
+        this.lr = newLr;
     }
 }

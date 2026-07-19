@@ -31,6 +31,8 @@ public class TrainingTest {
             }
         });
         TestReporter.runTest("End-to-End TinyGPT Language Model training step", () -> testEndToEndTraining());
+        TestReporter.runTest("LRScheduler Warmup & Cosine Decay schedule", () -> testLRScheduler());
+        TestReporter.runTest("Gradient Clipping L2 Norm scaling", () -> testGradientClipping());
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {
@@ -224,6 +226,78 @@ public class TrainingTest {
 
         if (secondLoss >= firstLoss) {
             throw new AssertionError("Training step failed: Loss did not decrease. First: " + firstLoss + ", Second: " + secondLoss);
+        }
+    }
+
+    private static void testLRScheduler() {
+        Tensor weight = new Tensor(new float[]{1.0f, 2.0f}, new int[]{2});
+        weight.setRequiresGrad(true);
+        AdamW optimizer = new AdamW(List.of(weight), 1e-3f);
+        LRScheduler scheduler = new LRScheduler(optimizer, 1e-3f, 1e-5f, 10, 100);
+
+        // Step 1 to 10: Warmup phase (increasing LR)
+        float lr1 = scheduler.step();
+        float lr5 = 0;
+        for (int i = 2; i <= 5; i++) lr5 = scheduler.step();
+        float lr10 = 0;
+        for (int i = 6; i <= 10; i++) lr10 = scheduler.step();
+
+        TestReporter.logMetric("Warmup Step 1 LR", lr1);
+        TestReporter.logMetric("Warmup Step 5 LR", lr5);
+        TestReporter.logMetric("Warmup Step 10 LR (Peak)", lr10);
+
+        if (lr1 >= lr5 || lr5 >= lr10) {
+            throw new AssertionError("LRScheduler warmup failed: LR did not monotonically increase.");
+        }
+
+        // Step 11 to 100: Cosine decay phase (decreasing LR)
+        float lr50 = 0;
+        for (int i = 11; i <= 50; i++) lr50 = scheduler.step();
+        float lr100 = 0;
+        for (int i = 51; i <= 100; i++) lr100 = scheduler.step();
+
+        TestReporter.logMetric("Cosine Step 50 LR", lr50);
+        TestReporter.logMetric("Cosine Step 100 LR (Min)", lr100);
+
+        if (lr10 <= lr50 || lr50 <= lr100) {
+            throw new AssertionError("LRScheduler cosine decay failed: LR did not monotonically decrease.");
+        }
+    }
+
+    private static void testGradientClipping() {
+        List<String> vocab = List.of("a", "b", "c", "d");
+        CharacterTokenizer tokenizer = new CharacterTokenizer(vocab);
+        com.tinymodelz.nn.TinyGPT model = new com.tinymodelz.nn.TinyGPT(vocab.size(), 8, 2, 2, 8, 16);
+        AdamW optimizer = new AdamW(model.getParameters(), 1e-3f);
+        CrossEntropyLoss lossFn = new CrossEntropyLoss();
+        Trainer trainer = new Trainer(model, tokenizer, optimizer, lossFn);
+
+        // Manually assign large gradients
+        for (Tensor p : model.getParameters()) {
+            if (p.requiresGrad()) {
+                float[] grad = new float[p.size()];
+                java.util.Arrays.fill(grad, 100.0f);
+                p.accumulateGrad(grad);
+            }
+        }
+
+        float normBefore = trainer.clipGradients(1.0f);
+        TestReporter.logMetric("Gradient Norm Before Clipping", normBefore);
+
+        // Compute norm after clipping
+        double sumSq = 0;
+        for (Tensor p : model.getParameters()) {
+            if (p.requiresGrad() && p.getGrad() != null) {
+                for (float g : p.getGrad()) {
+                    sumSq += g * g;
+                }
+            }
+        }
+        float normAfter = (float) Math.sqrt(sumSq);
+        TestReporter.logMetric("Gradient Norm After Clipping", normAfter);
+
+        if (normAfter > 1.05f) {
+            throw new AssertionError("Gradient clipping failed: norm " + normAfter + " > 1.0");
         }
     }
 }
