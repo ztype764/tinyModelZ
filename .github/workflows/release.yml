@@ -1,0 +1,66 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21 (GraalVM)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          cache: 'maven'
+
+      - name: Install OpenCL Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ocl-icd-opencl-dev opencl-headers pocl-opencl-icd gcc build-essential
+
+      - name: Compile Native GPU OpenCL Library
+        run: |
+          mkdir -p src/main/resources/native
+          gcc -shared -fPIC -O3 -I src/main/c src/main/c/gpu_engine_jni.c -ldl -lOpenCL -o src/main/resources/native/libtinymodelz_gpu.so || \
+          gcc -shared -fPIC -O3 -I src/main/c src/main/c/gpu_engine_jni.c -ldl -o src/main/resources/native/libtinymodelz_gpu.so
+
+      - name: Run Test Suite
+        run: |
+          mvn test-compile exec:java -Dexec.mainClass="com.tinymodelz.TestRunner" -Dexec.classpathScope="test"
+
+      - name: Package JAR Artifact
+        run: |
+          mvn clean package -DskipTests
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: TinyModelZ Release ${{ github.ref_name }}
+          body: |
+            ## 🚀 TinyModelZ Release ${{ github.ref_name }}
+
+            ### ✨ Key Features
+            - **Native OpenCL GPU Acceleration Engine**: Hardware-accelerated matrix operations with persistent memory buffer allocation pooling.
+            - **Autograd & Transformer Neural Engine**: Modular tensor engine supporting multi-head attention, causal masking, layer norm, and cross-entropy loss.
+            - **Training Infrastructure**: L2 Gradient Clipping, Linear Warmup + Cosine Decay LR Scheduler, Profiler, and lossless Checkpointing.
+            - **Spring Boot REST API**: High-throughput REST API with interactive visual prompt generator UI.
+          draft: false
+          prerelease: false
+          files: |
+            target/tinymodelz-1.0.0.jar
+            src/main/resources/native/libtinymodelz_gpu.so
+            test_report.html
+            PERFORMANCE_REPORT.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

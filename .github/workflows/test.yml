@@ -1,0 +1,47 @@
+name: Build & Test Pipeline
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test:
+    name: Build & Run Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21 (GraalVM)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          cache: 'maven'
+
+      - name: Install OpenCL Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ocl-icd-opencl-dev opencl-headers pocl-opencl-icd gcc build-essential
+
+      - name: Compile Native GPU OpenCL Library
+        run: |
+          mkdir -p src/main/resources/native
+          gcc -shared -fPIC -O3 -I src/main/c src/main/c/gpu_engine_jni.c -ldl -lOpenCL -o src/main/resources/native/libtinymodelz_gpu.so || \
+          gcc -shared -fPIC -O3 -I src/main/c src/main/c/gpu_engine_jni.c -ldl -o src/main/resources/native/libtinymodelz_gpu.so
+
+      - name: Compile Project
+        run: mvn compile test-compile
+
+      - name: Execute Test Suite
+        run: mvn exec:java -Dexec.mainClass="com.tinymodelz.TestRunner" -Dexec.classpathScope="test"
+
+      - name: Upload Test Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-test-report
+          path: test_report.html

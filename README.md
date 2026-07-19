@@ -63,8 +63,7 @@ tinyModelZ/
 ├── RULES.md                            # Project rules and engineering constraints
 ├── GOALS.md                            # Project goals checklist
 ├── pom.xml                             # Maven project configuration file
-├── build.sh                            # Command-line build and test runner script
-└── .gitignore                          # Git untracked file configurations
+└── build.sh                            # Command-line build and test runner script
 ```
 
 ---

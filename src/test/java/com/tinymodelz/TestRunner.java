@@ -25,6 +25,10 @@ public class TestRunner {
         logger.info("==================================================");
 
         try {
+            TestReporter.startSuite("Semantic Versioning & Metadata");
+            VersionTest.runTests();
+            TestReporter.endSuite();
+
             TestReporter.startSuite("Trie Prefix Tree Operations");
             TrieTest.runTests();
             TestReporter.endSuite();
