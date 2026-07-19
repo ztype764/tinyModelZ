@@ -134,12 +134,19 @@ public class AdamW {
         return lr;
     }
 
-    /**
-     * Sets the active learning rate for dynamic scheduling.
-     * 
-     * @param newLr updated learning rate
-     */
     public void setLearningRate(float newLr) {
         this.lr = newLr;
+    }
+
+    public void setStepCount(int stepCount) {
+        this.stepCount = stepCount;
+    }
+
+    public Map<Tensor, float[]> getMState() {
+        return m;
+    }
+
+    public Map<Tensor, float[]> getVState() {
+        return v;
     }
 }

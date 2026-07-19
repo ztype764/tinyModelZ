@@ -139,14 +139,26 @@ public class TrainingTest {
 
         File tempDir = new File("target/temp_checkpoint_" + System.currentTimeMillis());
         try {
-            Checkpoint.saveCheckpoint(testModule, tempDir);
+            AdamW optimizer = new AdamW(testModule.getParameters(), 1e-3f);
+            // Simulate a training step to populate m and v states
+            for (Tensor p : testModule.getParameters()) {
+                p.accumulateGrad(new float[p.size()]);
+            }
+            optimizer.step(); // stepCount = 1
+
+            Checkpoint.saveCheckpoint(testModule, optimizer, 2, 50, tempDir);
 
             float[] origData = testModule.getParameters().get(0).getData();
             float firstVal = origData[0];
             origData[0] = firstVal + 10.0f;
 
-            Checkpoint.loadCheckpoint(testModule, tempDir);
+            AdamW restoredOptimizer = new AdamW(testModule.getParameters(), 1e-3f);
+            Checkpoint.CheckpointState state = Checkpoint.loadCheckpoint(testModule, restoredOptimizer, tempDir);
+
             assertEquals(firstVal, origData[0], "Checkpoint reload did not restore weight value");
+            assertEquals(2, state.epoch, "Checkpoint reload did not restore epoch");
+            assertEquals(50, state.globalStep, "Checkpoint reload did not restore globalStep");
+            assertEquals(1, restoredOptimizer.getStepCount(), "Checkpoint reload did not restore stepCount");
         } finally {
             if (tempDir.exists()) {
                 File[] files = tempDir.listFiles();

@@ -267,14 +267,14 @@ public class Trainer {
             // --- Phase 1 Profiler Report ---
             profiler.printSummary(epoch, epochs);
 
-            // --- Phase 4 Validation Evaluation ---
+            // --- Phase 4 & Phase 9 Best Checkpoint ---
             if (valLoader != null) {
                 float valLoss = evaluate(valLoader);
                 if (valLoss < bestValLoss && checkpointDir != null) {
                     bestValLoss = valLoss;
                     File bestDir = new File(checkpointDir, "best_checkpoint");
                     try {
-                        Checkpoint.saveCheckpoint(model, bestDir);
+                        Checkpoint.saveCheckpoint(model, optimizer, epoch, optimizer.getStepCount(), bestDir);
                         logger.info("  [NEW BEST MODEL] Saved best checkpoint to: {}", bestDir.getAbsolutePath());
                     } catch (IOException e) {
                         logger.error("Failed to save best checkpoint: {}", e.getMessage());
@@ -282,12 +282,12 @@ public class Trainer {
                 }
             }
 
-            // --- Phase 4 Epoch Checkpoint ---
+            // --- Phase 4 & Phase 9 Epoch Checkpoint ---
             if (checkpointDir != null) {
                 long tChkStart = System.nanoTime();
                 File epochSaveDir = new File(checkpointDir, "epoch_" + epoch);
                 try {
-                    Checkpoint.saveCheckpoint(model, epochSaveDir);
+                    Checkpoint.saveCheckpoint(model, optimizer, epoch, optimizer.getStepCount(), epochSaveDir);
                     logger.info("  Saved Checkpoint: {}", epochSaveDir.getAbsolutePath());
                 } catch (IOException e) {
                     logger.error("Failed to save epoch checkpoint: {}", e.getMessage());
