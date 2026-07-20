@@ -54,6 +54,16 @@ public class MultiHeadAttention extends Module {
         for (Tensor p : outProj.getParameters()) registerParameter(p);
     }
 
+    public static class KVCache {
+        public Tensor keyCache;
+        public Tensor valueCache;
+
+        public void reset() {
+            keyCache = null;
+            valueCache = null;
+        }
+    }
+
     @Override
     public Tensor forward(Tensor... inputs) {
         if (inputs.length == 0) {

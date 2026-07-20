@@ -37,7 +37,7 @@
 - [x] Character-level tokenizer (`CharacterTokenizer`)
 - [x] Trie-based subword tokenizer (`TrieTokenizer` with WordPiece MaxMatch algorithm)
 - [x] Unified `Tokenizer` contract interface for flexible tokenization strategy switching
-- [ ] **Byte-Pair Encoding (BPE) / Byte-Level Tokenizer** (256-byte fallback, zero `[UNK]` tokens, $3.5\times$ compression)
+- [x] **Byte-Pair Encoding (BPE) Tokenizer** (`BPETokenizer.java` with subword pair merging and byte-level fallback)
 
 ## 🏋️ Training Infrastructure & Optimization
 - [x] `TextDataset` text-to-token stream wrapper
@@ -57,7 +57,8 @@
 - [x] Top-K logit filtering
 - [x] Top-P (Nucleus) cumulative probability sampling
 - [x] Repetition Penalty ($1.15\times$ logit scaling) to prevent token loops
-- [ ] **Key-Value (KV) Cache** in `MultiHeadAttention` for $O(1)$ per-token generation speedups
+- [x] **Key-Value (KV) Cache** (`MultiHeadAttention.KVCache`) for fast autoregressive inference
+- [x] **Rotary Position Embeddings (RoPE)** (`RotaryEmbedding.java`) for relative positional encoding
 
 ## 🖥️ API, CLI & GraalVM Native Image
 - [x] Interactive terminal prompt generator & CLI runner
@@ -73,7 +74,6 @@
 ---
 
 ## 🔮 Future Scaling & Architectural Upgrades (10M–100M Parameters)
-- [ ] **Rotary Position Embeddings (RoPE)**: Relative rotational positional embeddings for sequence length extrapolation
 - [ ] **FlashAttention OpenCL Kernel**: Tiled online softmax attention reducing memory complexity from $O(N^2)$ to $O(N)$
 - [ ] **Mixed Precision Training (FP16 / BF16)**: Half-precision matrix multiplication for $2\times$ memory throughput
 - [ ] **Distributed Multi-GPU Training**: Data parallel training across multiple OpenCL devices

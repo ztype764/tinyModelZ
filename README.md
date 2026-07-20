@@ -98,6 +98,53 @@ The `Generator` class supports autoregressive generation using:
 
 ---
 
+## 🤖 Sending Prompts to the Trained Model
+
+You can send text prompts to trained models using any of the following 3 convenient interfaces:
+
+### 1. Interactive & CLI Prompt Runner (`PromptRunner`)
+Run the interactive CLI prompt runner via Maven:
+```bash
+# Interactive REPL mode:
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" -Dexec.args="--checkpoint checkpoints/best_checkpoint"
+
+# Single-prompt non-interactive mode:
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" -Dexec.args="--prompt 'Once upon a time, a small dog' --max-tokens 50 --device gpu"
+```
+
+### 2. Spring Boot REST API Endpoint (`/api/generate`)
+Send an HTTP POST request to `/api/generate`:
+```bash
+curl -X POST http://localhost:8080/api/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Once upon a time, a little girl",
+    "maxNewTokens": 40,
+    "temperature": 0.7,
+    "topK": 40,
+    "topP": 0.9
+  }'
+```
+**JSON Response:**
+```json
+{
+  "generatedText": "Once upon a time, a little girl found a small puppy in the garden and smiled.",
+  "prompt": "Once upon a time, a little girl",
+  "tokensGenerated": 40,
+  "latencyMs": 142,
+  "tokensPerSec": 281.7
+}
+```
+
+### 3. Interactive Web UI Prompt Playground
+Start the Spring Boot Web server:
+```bash
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn spring-boot:run
+```
+Open **`http://localhost:8080`** in your web browser to access the visual **Model Prompt Playground & Autoregressive Generator UI**.
+
+---
+
 ## 🚀 How to Build and Run Tests
 
 You can build the project and run the complete test suite using the provided `build.sh` script:

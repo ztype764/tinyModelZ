@@ -405,6 +405,64 @@
             </div>
         </div>
 
+        <!-- Model Prompt Playground Panel -->
+        <div class="panel" style="grid-column: 1 / -1;">
+            <div class="panel-title">🤖 Model Prompt Playground & Autoregressive Generator</div>
+            
+            <div class="grid-config" style="grid-template-columns: 2fr 1fr;">
+                <div class="form-group">
+                    <label for="prompt-input">Input Text Prompt</label>
+                    <textarea id="prompt-input" placeholder="Type prompt here (e.g., 'Once upon a time, a little puppy')...">Once upon a time</textarea>
+                </div>
+                
+                <div class="grid-config" style="grid-template-columns: 1fr 1fr;">
+                    <div class="form-group">
+                        <label for="gen-max-tokens">Max Tokens</label>
+                        <input type="number" id="gen-max-tokens" value="40" min="5" max="200">
+                    </div>
+                    <div class="form-group">
+                        <label for="gen-temp">Temperature</label>
+                        <input type="number" id="gen-temp" value="0.7" min="0.1" max="2.0" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="gen-top-k">Top-K</label>
+                        <input type="number" id="gen-top-k" value="40" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="gen-top-p">Top-P</label>
+                        <input type="number" id="gen-top-p" value="0.9" min="0.1" max="1.0" step="0.05">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" style="justify-content: flex-end;">
+                <button class="btn" id="btn-generate" style="background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-cyan) 100%);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg>
+                    Send Prompt to Model
+                </button>
+            </div>
+
+            <div class="form-group">
+                <label for="gen-output">Generated Model Continuation</label>
+                <textarea id="gen-output" readonly style="min-height: 100px; font-family: monospace; color: var(--accent-cyan); background-color: #0c101b;" placeholder="Model generation output will appear here..."></textarea>
+            </div>
+
+            <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+                <div class="stat-card">
+                    <span class="stat-label">Generation Latency</span>
+                    <span class="stat-val" id="gen-stat-latency">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">New Tokens</span>
+                    <span class="stat-val" id="gen-stat-tokens">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Throughput</span>
+                    <span class="stat-val" id="gen-stat-throughput" style="color: var(--success);">-</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Transformer Panel -->
         <div class="panel">
             <div class="panel-title">Transformer Block Forward & Backward Pass</div>
@@ -471,7 +529,41 @@
             
             document.getElementById('btn-tokenize').addEventListener('click', runTokenize);
             document.getElementById('btn-forward').addEventListener('click', runForward);
+            document.getElementById('btn-generate').addEventListener('click', runGenerate);
         });
+
+        function runGenerate() {
+            const prompt = document.getElementById('prompt-input').value;
+            const maxNewTokens = parseInt(document.getElementById('gen-max-tokens').value);
+            const temperature = parseFloat(document.getElementById('gen-temp').value);
+            const topK = parseInt(document.getElementById('gen-top-k').value);
+            const topP = parseFloat(document.getElementById('gen-top-p').value);
+
+            const btn = document.getElementById('btn-generate');
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+
+            fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, maxNewTokens, temperature, topK, topP })
+            })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('gen-output').value = data.generatedText;
+                document.getElementById('gen-stat-latency').textContent = `${data.latencyMs} ms`;
+                document.getElementById('gen-stat-tokens').textContent = `${data.tokensGenerated} tok`;
+                document.getElementById('gen-stat-throughput').textContent = `${data.tokensPerSec.toFixed(1)} tok/s`;
+            })
+            .catch(err => {
+                console.error("Error generating text:", err);
+                alert("Generation API call failed");
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.textContent = 'Send Prompt to Model';
+            });
+        }
 
         function fetchStatus() {
             fetch('/api/status')

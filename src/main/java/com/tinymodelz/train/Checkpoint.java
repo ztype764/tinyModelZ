@@ -178,6 +178,13 @@ public class Checkpoint {
             } catch (Exception e) {
                 logger.warn("Failed to parse metadata file in checkpoint: {}", e.getMessage());
             }
+        } else {
+            String dirName = directory.getName();
+            if (dirName.startsWith("epoch_")) {
+                try {
+                    epoch = Integer.parseInt(dirName.substring(6));
+                } catch (Exception ignored) {}
+            }
         }
 
         logger.info("Successfully loaded complete training checkpoint from: {} (Epoch: {}, Step: {}, LR: {})",

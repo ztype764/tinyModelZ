@@ -15,8 +15,10 @@ import java.util.List;
 /**
  * <h3>Trainer</h3>
  *
- * <p>Orchestrates training, evaluation, overfit testing, gradient clipping,
- * learning rate scheduling, profiling, checkpointing, and text generation.</p>
+ * <p>
+ * Orchestrates training, evaluation, overfit testing, gradient clipping,
+ * learning rate scheduling, profiling, checkpointing, and text generation.
+ * </p>
  */
 public class Trainer {
 
@@ -67,15 +69,18 @@ public class Trainer {
      * @return original unclipped global gradient norm
      */
     public float clipGradients(float maxNorm) {
-        if (maxNorm <= 0.0f) return 0.0f;
+        if (maxNorm <= 0.0f)
+            return 0.0f;
 
         List<Tensor> params = model.getParameters();
         double sumSq = 0.0;
 
         for (Tensor p : params) {
-            if (!p.requiresGrad()) continue;
+            if (!p.requiresGrad())
+                continue;
             float[] grad = p.getGrad();
-            if (grad == null) continue;
+            if (grad == null)
+                continue;
             for (float g : grad) {
                 sumSq += g * g;
             }
@@ -85,9 +90,11 @@ public class Trainer {
         if (totalNorm > maxNorm) {
             float scale = maxNorm / (totalNorm + 1e-6f);
             for (Tensor p : params) {
-                if (!p.requiresGrad()) continue;
+                if (!p.requiresGrad())
+                    continue;
                 float[] grad = p.getGrad();
-                if (grad == null) continue;
+                if (grad == null)
+                    continue;
                 for (int i = 0; i < grad.length; i++) {
                     grad[i] *= scale;
                 }
@@ -103,7 +110,8 @@ public class Trainer {
      * @return validation loss value
      */
     public float evaluate(DataLoader valLoader) {
-        if (valLoader == null) return Float.MAX_VALUE;
+        if (valLoader == null)
+            return Float.MAX_VALUE;
 
         model.eval();
         valLoader.reset();
@@ -124,7 +132,8 @@ public class Trainer {
 
         float avgValLoss = count > 0 ? totalLoss / count : Float.MAX_VALUE;
         float valPpl = (float) Math.exp(avgValLoss);
-        logger.info(String.format("=== Validation Evaluation === Loss: %.4f | PPL: %.2f (%d batches)", avgValLoss, valPpl, count));
+        logger.info(String.format("=== Validation Evaluation === Loss: %.4f | PPL: %.2f (%d batches)", avgValLoss,
+                valPpl, count));
         return avgValLoss;
     }
 
@@ -162,7 +171,8 @@ public class Trainer {
             float perplexity = (float) Math.exp(currentLoss);
 
             if (step == 1 || step % 10 == 0 || currentLoss <= targetLoss || step == maxSteps) {
-                logger.info(String.format("[Overfit Step %d/%d] loss = %.4f, PPL = %.2f", step, maxSteps, currentLoss, perplexity));
+                logger.info(String.format("[Overfit Step %d/%d] loss = %.4f, PPL = %.2f", step, maxSteps, currentLoss,
+                        perplexity));
             }
 
             if (currentLoss <= targetLoss) {
@@ -175,10 +185,12 @@ public class Trainer {
     }
 
     /**
-     * Executes full multi-epoch training over a dataset with profiling, learning rate scheduling,
+     * Executes full multi-epoch training over a dataset with profiling, learning
+     * rate scheduling,
      * validation evaluation, and best checkpoint retention.
      */
-    public void train(DataLoader loader, DataLoader valLoader, int epochs, File checkpointDir, String prompt, int generateTokens, int logInterval) {
+    public void train(DataLoader loader, DataLoader valLoader, int epochs, File checkpointDir, String prompt,
+            int generateTokens, int logInterval) {
         logger.info("==================================================");
         logger.info(String.format("Starting Full Training: %d Epochs, Batch Size: %d, Context Length: %d",
                 epochs, loader.getBatchSize(), loader.getSeqLen()));
@@ -189,7 +201,8 @@ public class Trainer {
         int totalTrainingSteps = totalBatchesPerEpoch * epochs;
         int warmupSteps = (int) (totalTrainingSteps * 0.05f); // 5% warmup steps
 
-        LRScheduler scheduler = new LRScheduler(optimizer, optimizer.getLearningRate(), 1e-5f, warmupSteps, totalTrainingSteps);
+        LRScheduler scheduler = new LRScheduler(optimizer, optimizer.getLearningRate(), 1e-5f, warmupSteps,
+                totalTrainingSteps);
         float bestValLoss = Float.MAX_VALUE;
 
         for (int epoch = 1; epoch <= epochs; epoch++) {
@@ -233,7 +246,8 @@ public class Trainer {
                 int batchTokens = x.getShape()[0] * x.getShape()[1];
                 totalEpochTokens += batchTokens;
 
-                if (batchesProcessed == 1 || batchesProcessed % logInterval == 0 || batchesProcessed == totalBatchesPerEpoch) {
+                if (batchesProcessed == 1 || batchesProcessed % logInterval == 0
+                        || batchesProcessed == totalBatchesPerEpoch) {
                     float avgLossSoFar = epochLossSum / batchesProcessed;
                     float ppl = (float) Math.exp(avgLossSoFar);
 
@@ -246,8 +260,7 @@ public class Trainer {
                     logger.info(String.format(
                             "[Epoch %d/%d | Batch %d/%d] loss = %.4f | PPL = %.2f | lr = %.6f | tok/s = %.0f | ETA = %ds",
                             epoch, epochs, batchesProcessed, totalBatchesPerEpoch,
-                            avgLossSoFar, ppl, scheduler.getLearningRate(), tokPerSec, etaSec
-                    ));
+                            avgLossSoFar, ppl, scheduler.getLearningRate(), tokPerSec, etaSec));
                 }
             }
 
@@ -301,8 +314,7 @@ public class Trainer {
                 Integer eosId = (eosCandidate == tokenizer.tokenToId("[UNK]")) ? null : eosCandidate;
 
                 String sampleOutput = generator.generate(
-                        model, tokenizer, prompt, generateTokens, 0.8f, 40, 0.9f, model.getMaxSeqLen(), eosId
-                );
+                        model, tokenizer, prompt, generateTokens, 0.8f, 40, 0.9f, model.getMaxSeqLen(), eosId);
                 logger.info("  Generated Sample (prompt='{}'):\n\"{}\"", prompt, sampleOutput.trim());
             }
             logger.info("==================================================");
@@ -312,7 +324,8 @@ public class Trainer {
     /**
      * Legacy single-loader entry point for backwards compatibility.
      */
-    public void train(DataLoader loader, int epochs, File checkpointDir, String prompt, int generateTokens, int logInterval) {
+    public void train(DataLoader loader, int epochs, File checkpointDir, String prompt, int generateTokens,
+            int logInterval) {
         train(loader, null, epochs, checkpointDir, prompt, generateTokens, logInterval);
     }
 

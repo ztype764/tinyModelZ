@@ -41,6 +41,10 @@ public class TestRunner {
             CharacterTokenizerTest.runTests();
             TestReporter.endSuite();
 
+            TestReporter.startSuite("Byte-Pair Encoding (BPE) Tokenizer");
+            com.tinymodelz.tokenizer.BPETokenizerTest.runTests();
+            TestReporter.endSuite();
+
             TestReporter.startSuite("Math Engine Operations");
             MathEngineTest.runTests();
             TestReporter.endSuite();
@@ -55,6 +59,7 @@ public class TestRunner {
 
             TestReporter.startSuite("Transformer Components");
             com.tinymodelz.nn.TransformerTest.runTests();
+            com.tinymodelz.nn.RotaryEmbeddingTest.runTests();
             TestReporter.endSuite();
 
             TestReporter.startSuite("TinyGPT Language Model");
@@ -67,6 +72,7 @@ public class TestRunner {
 
             TestReporter.startSuite("Autoregressive Inference & Sampling");
             com.tinymodelz.inference.GeneratorTest.runTests();
+            com.tinymodelz.api.ApiControllerTest.runTests();
             TestReporter.endSuite();
 
             TestReporter.startSuite("TinyStories Training Pipeline End-to-End");
