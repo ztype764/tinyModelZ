@@ -17,6 +17,15 @@ Across all 12 Phases defined in `NEXT_STEPS.md`, the following core improvements
   Evaluates model validation loss and perplexity on separate validation split after each epoch.
 * **Full Training Checkpoint Persistence & Resumption (`Checkpoint.java`)**:
   Serializes model parameters, AdamW optimizer momentum ($m$) and variance ($v$) state vectors, global step count, epoch index, and metadata for exact training resumption.
+### 🔤 Modular Tokenizer & Checkpoint Architecture
+* **Modular Tokenizer Factory (`TokenizerFactory.java`)**:
+  Supports dynamic creation, serialization, and deserialization for `CharacterTokenizer`, `BPETokenizer`, and `TrieTokenizer`. Handles multi-character control tokens (`<|endoftext|>`) losslessly.
+* **Structured Checkpoint Subdirectories (`checkpoints/<dataset>_<tokenizer>_<timestamp>/`)**:
+  Isolates training runs into timestamped folders storing metadata (`run_info.properties`), tokenizer vocabulary, and per-epoch model checkpoints.
+* **Exact Epoch Resumption**:
+  Restores parameters, AdamW momentum ($m$) and variance ($v$) state vectors, total step count, and LR scheduler state to resume cleanly from interrupted epochs (e.g. starting at epoch 2).
+* **Automated Run Discovery (`PromptRunner.java`)**:
+  Scans checkpoint directories, lists available model runs with metadata, and automatically reloads the associated tokenizer for interactive prompt evaluation.
 
 ### ⚡ GPU Acceleration Engine Optimization (Phases 2, 3)
 * **Persistent OpenCL Memory Buffer Allocation Pooling**:
@@ -27,6 +36,7 @@ Across all 12 Phases defined in `NEXT_STEPS.md`, the following core improvements
   Tiled workgroup layout for reduced global memory traffic and improved GPU cache hit rates.
 
 ### 🔮 Autoregressive Inference Improvements (Phase 6)
+* **Key-Value (KV) Cache & RoPE**: Integrated KV-Cache for $O(1)$ decoding step throughput and Rotary Position Embeddings for relative position encoding.
 * **Repetition Penalty**: Applied $1.15\times$ penalty scaling to previously generated tokens to prevent repetitive text loops.
 * **Greedy, Temperature, Top-K, Top-P Nucleus Sampling**: Integrated multi-strategy logit sampling.
 
@@ -39,7 +49,9 @@ Across all 12 Phases defined in `NEXT_STEPS.md`, the following core improvements
 | **GPU Test Suite Runtime** | 385 ms | **96 ms** | **4.0x Speedup** |
 | **Overfit Convergence (Single Batch)** | 193 ms (13 steps) | **75 ms (12 steps)** | **2.5x Speedup** |
 | **Gradient Stability** | Unclipped | **L2 Norm Clipped ($\le 1.0$)** | **Zero Explosion** |
-| **Training Resumption** | Weight-only reload | **Exact Resume (Weights + AdamW $m,v$)** | **Lossless Recovery** |
+| **Training Resumption** | Weight-only reload | **Exact Resume (Weights + AdamW $m,v$ + LR Step)** | **Lossless Recovery** |
+| **Tokenizer Selection** | Hardcoded Character | **Dynamic Factory (BPE, Character, Trie)** | **Full Flexibility** |
+| **Run Management** | Flat checkpoint files | **Timestamped Folders + Metadata** | **Organized Tracking** |
 | **Execution Profiling** | None | **Nanosecond per-phase breakdown** | **Full Observability** |
 
 ---
@@ -48,13 +60,9 @@ Across all 12 Phases defined in `NEXT_STEPS.md`, the following core improvements
 
 To scale TinyModelZ from tiny validation models to 10M–100M parameters, the following architectural milestones are recommended:
 
-1. **Byte-Pair Encoding (BPE) Tokenizer (Byte-level BPE)**:
-   - Transition from subword/character tokenization to 256-byte fallback BPE to compress context windows by $3.5\times$ and eliminate unknown tokens.
-2. **Key-Value (KV) Cache for Inference**:
-   - Cache past key and value projections ($K, V$) in `MultiHeadAttention` during autoregressive decoding to reduce inference complexity from $O(N^2)$ to $O(1)$ per token.
-3. **Rotary Position Embeddings (RoPE)**:
-   - Replace absolute positional embeddings with relative rotational matrices for context extrapolation.
-4. **FlashAttention OpenCL Implementation**:
+1. **FlashAttention OpenCL Implementation**:
    - Implement tiled online softmax attention to reduce attention matrix memory footprint from $O(N^2)$ to $O(N)$.
-5. **Mixed Precision (FP16 / BF16)**:
+2. **Mixed Precision (FP16 / BF16)**:
    - Halve VRAM usage and double throughput by performing GPU matrix multiplications in half-precision floating point.
+3. **Distributed Multi-GPU Training**:
+   - Implement data parallel training across multiple OpenCL/CUDA compute devices.

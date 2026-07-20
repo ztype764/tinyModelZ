@@ -16,7 +16,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Properties;
 import java.util.Scanner;
@@ -25,7 +27,7 @@ import java.util.Scanner;
  * <h3>PromptRunner</h3>
  *
  * <p>Interactive CLI Application for selecting trained TinyGPT model checkpoints,
- * loading matching tokenizers, and running autoregressive inference.</p>
+ * selecting training runs/datasets, choosing specific epochs, and running autoregressive inference.</p>
  */
 public class PromptRunner {
 
@@ -49,6 +51,8 @@ public class PromptRunner {
 
     public static void main(String[] args) {
         String checkpointPath = null;
+        String requestedRun = null;
+        String requestedEpoch = null;
         String datasetPath = "TinyStories-valid-reduced.txt";
         if (!Files.exists(Path.of(datasetPath)) && Files.exists(Path.of("TinyStories-valid.txt"))) {
             datasetPath = "TinyStories-valid.txt";
@@ -65,6 +69,10 @@ public class PromptRunner {
         for (int i = 0; i < args.length; i++) {
             if ("--checkpoint".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
                 checkpointPath = args[++i];
+            } else if ("--run".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
+                requestedRun = args[++i];
+            } else if ("--epoch".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
+                requestedEpoch = args[++i];
             } else if ("--dataset".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
                 datasetPath = args[++i];
             } else if ("--prompt".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
@@ -109,18 +117,143 @@ public class PromptRunner {
         }
 
         File selectedCheckpointDir = null;
+        Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
+
         if (checkpointPath != null) {
             selectedCheckpointDir = new File(checkpointPath);
         } else if (!availableRuns.isEmpty()) {
-            System.out.println("\n🔍 Discovered Available Checkpoint Runs:");
-            printAvailableRuns(availableRuns);
-            selectedCheckpointDir = availableRuns.get(0).epochCheckpoints.get(availableRuns.get(0).epochCheckpoints.size() - 1);
-            System.out.println("\n-> Selected Default Checkpoint: " + selectedCheckpointDir.getPath());
+            CheckpointRunOption selectedRun = null;
+
+            // 1. Select Training Data / Run Folder
+            if (requestedRun != null) {
+                try {
+                    int rIdx = Integer.parseInt(requestedRun) - 1;
+                    if (rIdx >= 0 && rIdx < availableRuns.size()) {
+                        selectedRun = availableRuns.get(rIdx);
+                    }
+                } catch (NumberFormatException ignored) {}
+
+                if (selectedRun == null) {
+                    for (CheckpointRunOption r : availableRuns) {
+                        if (r.dir.getName().toLowerCase().contains(requestedRun.toLowerCase()) ||
+                            r.datasetName.toLowerCase().contains(requestedRun.toLowerCase())) {
+                            selectedRun = r;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (selectedRun == null) {
+                System.out.println("\n--------------------------------------------------");
+                System.out.println("🔍 Discovered Available Training Runs & Datasets:");
+                System.out.println("--------------------------------------------------");
+                for (int i = 0; i < availableRuns.size(); i++) {
+                    CheckpointRunOption runOpt = availableRuns.get(i);
+                    System.out.printf("[%d] Folder: %s\n", i + 1, runOpt.dir.getName());
+                    System.out.printf("    Dataset: %s | Tokenizer: %s | Started: %s\n", runOpt.datasetName, runOpt.tokenizerType.toUpperCase(), runOpt.startedAt);
+                    System.out.print("    Available Epochs: ");
+                    for (File chk : runOpt.epochCheckpoints) {
+                        System.out.print(chk.getName() + "  ");
+                    }
+                    System.out.println("\n--------------------------------------------------");
+                }
+
+                if (prompt == null) {
+                    System.out.print("👉 Select Training Data / Run [1-" + availableRuns.size() + "] (Default 1): ");
+                    if (scanner.hasNextLine()) {
+                        String inputLine = scanner.nextLine().trim();
+                        if (!inputLine.isEmpty()) {
+                            try {
+                                int sel = Integer.parseInt(inputLine) - 1;
+                                if (sel >= 0 && sel < availableRuns.size()) {
+                                    selectedRun = availableRuns.get(sel);
+                                }
+                            } catch (NumberFormatException ignored) {}
+                            if (selectedRun == null) {
+                                for (CheckpointRunOption r : availableRuns) {
+                                    if (r.dir.getName().toLowerCase().contains(inputLine.toLowerCase()) ||
+                                        r.datasetName.toLowerCase().contains(inputLine.toLowerCase())) {
+                                        selectedRun = r;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (selectedRun == null) {
+                    selectedRun = availableRuns.get(0);
+                    System.out.println("-> Defaulting to latest run: " + selectedRun.dir.getName());
+                }
+            }
+
+            // 2. Select Epoch Checkpoint from Chosen Run
+            List<File> chkList = selectedRun.epochCheckpoints;
+            File selectedEpochDir = null;
+
+            if (requestedEpoch != null) {
+                try {
+                    int eIdx = Integer.parseInt(requestedEpoch) - 1;
+                    if (eIdx >= 0 && eIdx < chkList.size()) {
+                        selectedEpochDir = chkList.get(eIdx);
+                    }
+                } catch (NumberFormatException ignored) {}
+
+                if (selectedEpochDir == null) {
+                    String lower = requestedEpoch.toLowerCase();
+                    for (File f : chkList) {
+                        if (f.getName().toLowerCase().equals(lower) ||
+                            f.getName().toLowerCase().equals("epoch_" + lower) ||
+                            (lower.equals("best") && f.getName().equals("best_checkpoint"))) {
+                            selectedEpochDir = f;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (selectedEpochDir == null && prompt == null && chkList.size() > 1) {
+                System.out.println("\n--------------------------------------------------");
+                System.out.println("📅 Available Epoch Checkpoints for Run '" + selectedRun.dir.getName() + "':");
+                System.out.println("--------------------------------------------------");
+                for (int i = 0; i < chkList.size(); i++) {
+                    System.out.printf(" [%d] %s\n", i + 1, chkList.get(i).getName());
+                }
+                String defaultEpochName = chkList.get(chkList.size() - 1).getName();
+                System.out.print("👉 Select Epoch Checkpoint [1-" + chkList.size() + "] (Default latest: " + defaultEpochName + "): ");
+                if (scanner.hasNextLine()) {
+                    String inputLine = scanner.nextLine().trim();
+                    if (!inputLine.isEmpty()) {
+                        try {
+                            int sel = Integer.parseInt(inputLine) - 1;
+                            if (sel >= 0 && sel < chkList.size()) {
+                                selectedEpochDir = chkList.get(sel);
+                            }
+                        } catch (NumberFormatException ignored) {}
+                        if (selectedEpochDir == null) {
+                            for (File f : chkList) {
+                                if (f.getName().toLowerCase().contains(inputLine.toLowerCase())) {
+                                    selectedEpochDir = f;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (selectedEpochDir == null) {
+                selectedEpochDir = chkList.get(chkList.size() - 1);
+            }
+
+            selectedCheckpointDir = selectedEpochDir;
         } else {
             selectedCheckpointDir = new File("checkpoints/tinystories");
         }
 
-        System.out.println("Selected Checkpoint: " + selectedCheckpointDir.getAbsolutePath());
+        System.out.println("\nSelected Checkpoint: " + selectedCheckpointDir.getAbsolutePath());
         System.out.println("==================================================");
 
         // 1. Load exact tokenizer or construct from dataset
@@ -159,7 +292,7 @@ public class PromptRunner {
         if (prompt != null && !prompt.trim().isEmpty()) {
             generateAndPrint(model, tokenizer, generator, prompt, maxNewTokens, temperature, topK, topP, seqLen, eosId);
         } else {
-            runInteractiveRepl(model, tokenizer, generator, maxNewTokens, temperature, topK, topP, seqLen, eosId);
+            runInteractiveRepl(scanner, model, tokenizer, generator, maxNewTokens, temperature, topK, topP, seqLen, eosId);
         }
     }
 
@@ -168,43 +301,80 @@ public class PromptRunner {
         File checkpointsBase = new File("checkpoints");
         if (!checkpointsBase.exists() || !checkpointsBase.isDirectory()) return runs;
 
-        File[] subdirs = checkpointsBase.listFiles(File::isDirectory);
-        if (subdirs == null) return runs;
+        List<File> candidateDirs = new ArrayList<>();
 
-        for (File dir : subdirs) {
-            File runInfo = new File(dir, "run_info.properties");
-            String datasetName = dir.getName();
-            String tokenizerType = "character";
-            String startedAt = "unknown";
-
-            if (runInfo.exists()) {
-                Properties props = new Properties();
-                try (FileInputStream in = new FileInputStream(runInfo)) {
-                    props.load(in);
-                    datasetName = props.getProperty("datasetName", datasetName);
-                    tokenizerType = props.getProperty("tokenizerType", tokenizerType);
-                    startedAt = props.getProperty("startedAt", startedAt);
-                } catch (Exception ignored) {}
-            } else if (dir.getName().contains("_")) {
-                String[] parts = dir.getName().split("_");
-                if (parts.length >= 2) {
-                    tokenizerType = parts[1];
+        File tinystoriesBase = new File(checkpointsBase, "tinystories");
+        if (tinystoriesBase.exists() && tinystoriesBase.isDirectory()) {
+            File[] subdirs = tinystoriesBase.listFiles(File::isDirectory);
+            if (subdirs != null) {
+                for (File s : subdirs) {
+                    if (!s.getName().startsWith("epoch_") && !s.getName().equals("best_checkpoint")) {
+                        candidateDirs.add(s);
+                    }
                 }
             }
+            candidateDirs.add(tinystoriesBase);
+        }
 
+        File[] rootSubdirs = checkpointsBase.listFiles(File::isDirectory);
+        if (rootSubdirs != null) {
+            for (File s : rootSubdirs) {
+                if (!s.getName().equalsIgnoreCase("tinystories")) {
+                    candidateDirs.add(s);
+                }
+            }
+        }
+
+        for (File dir : candidateDirs) {
             List<File> chkFiles = new ArrayList<>();
             File[] epochDirs = dir.listFiles((d, name) -> name.startsWith("epoch_") || name.equals("best_checkpoint"));
-            if (epochDirs != null) {
-                for (File ed : epochDirs) chkFiles.add(ed);
-            }
-            if (chkFiles.isEmpty() && new File(dir, "param_0.tmat").exists()) {
+            if (epochDirs != null && epochDirs.length > 0) {
+                List<File> sorted = new ArrayList<>(List.of(epochDirs));
+                sorted.sort((a, b) -> {
+                    boolean aEpoch = a.getName().startsWith("epoch_");
+                    boolean bEpoch = b.getName().startsWith("epoch_");
+                    if (aEpoch && bEpoch) {
+                        try {
+                            int numA = Integer.parseInt(a.getName().substring(6));
+                            int numB = Integer.parseInt(b.getName().substring(6));
+                            return Integer.compare(numA, numB);
+                        } catch (Exception ignored) {}
+                    }
+                    if (aEpoch) return -1;
+                    if (bEpoch) return 1;
+                    return a.getName().compareTo(b.getName());
+                });
+                chkFiles.addAll(sorted);
+            } else if (new File(dir, "param_0.tmat").exists()) {
                 chkFiles.add(dir);
             }
 
             if (!chkFiles.isEmpty()) {
+                File runInfo = new File(dir, "run_info.properties");
+                String datasetName = dir.getName();
+                String tokenizerType = "bpe";
+                String startedAt = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(dir.lastModified()));
+
+                if (runInfo.exists()) {
+                    Properties props = new Properties();
+                    try (FileInputStream in = new FileInputStream(runInfo)) {
+                        props.load(in);
+                        datasetName = props.getProperty("datasetName", datasetName);
+                        tokenizerType = props.getProperty("tokenizerType", tokenizerType);
+                        startedAt = props.getProperty("startedAt", startedAt);
+                    } catch (Exception ignored) {}
+                } else if (dir.getName().contains("_")) {
+                    String[] parts = dir.getName().split("_");
+                    if (parts.length >= 2) {
+                        tokenizerType = parts[1];
+                    }
+                }
+
                 runs.add(new CheckpointRunOption(dir, datasetName, tokenizerType, startedAt, chkFiles));
             }
         }
+
+        runs.sort((a, b) -> Long.compare(b.dir.lastModified(), a.dir.lastModified()));
         return runs;
     }
 
@@ -218,7 +388,7 @@ public class PromptRunner {
         System.out.println("--------------------------------------------------");
         for (int i = 0; i < runs.size(); i++) {
             CheckpointRunOption option = runs.get(i);
-            System.out.printf("[%d] Run Dir: %s\n", i + 1, option.dir.getName());
+            System.out.printf("[%d] Training Folder: %s\n", i + 1, option.dir.getName());
             System.out.printf("    Dataset: %s | Tokenizer: %s | Started: %s\n", option.datasetName, option.tokenizerType.toUpperCase(), option.startedAt);
             System.out.print("    Available Checkpoints: ");
             for (File chk : option.epochCheckpoints) {
@@ -249,6 +419,7 @@ public class PromptRunner {
     }
 
     private static void runInteractiveRepl(
+            Scanner scanner,
             TinyGPT model,
             Tokenizer tokenizer,
             Generator generator,
@@ -258,7 +429,9 @@ public class PromptRunner {
             float defaultTopP,
             int seqLen,
             Integer eosId) {
-        Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
+        if (scanner == null) {
+            scanner = new Scanner(System.in, StandardCharsets.UTF_8);
+        }
         System.out.println("\n💡 Interactive REPL Mode Activated.");
         System.out.println("Tokenizer in use: " + tokenizer.getClass().getSimpleName());
         System.out.println("Type your text prompt and press ENTER to generate continuation.");

@@ -181,16 +181,19 @@ public class BPETokenizer implements Tokenizer {
         return Collections.unmodifiableMap(mergeRanks);
     }
 
+    private final Map<String, List<String>> wordCache = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Override
     public List<String> tokenize(String text) {
         if (text == null || text.isEmpty()) return Collections.emptyList();
 
         List<String> specialTokens = List.of(EOS_TOKEN, UNK_TOKEN, PAD_TOKEN);
-
         List<String> result = new ArrayList<>();
         int i = 0;
         int len = text.length();
+
         while (i < len) {
+            // Check for special tokens match
             boolean matchedSpecial = false;
             for (String special : specialTokens) {
                 if (text.startsWith(special, i)) {
@@ -202,7 +205,43 @@ public class BPETokenizer implements Tokenizer {
             }
             if (matchedSpecial) continue;
 
+            // Gather chunk: non-whitespace sequence vs single whitespace character
+            int start = i;
             char c = text.charAt(i);
+            if (!Character.isWhitespace(c)) {
+                i++;
+                while (i < len && !Character.isWhitespace(text.charAt(i))) {
+                    // Stop if special token starts at i
+                    boolean isSpecial = false;
+                    for (String special : specialTokens) {
+                        if (text.startsWith(special, i)) {
+                            isSpecial = true;
+                            break;
+                        }
+                    }
+                    if (isSpecial) break;
+                    i++;
+                }
+            } else {
+                i++;
+            }
+
+            String chunk = text.substring(start, i);
+            result.addAll(tokenizeChunk(chunk));
+        }
+
+        return result;
+    }
+
+    private List<String> tokenizeChunk(String chunk) {
+        if (chunk == null || chunk.isEmpty()) return Collections.emptyList();
+        List<String> cached = wordCache.get(chunk);
+        if (cached != null) return cached;
+
+        List<String> result = new ArrayList<>();
+        int len = chunk.length();
+        for (int i = 0; i < len; i++) {
+            char c = chunk.charAt(i);
             String sym = String.valueOf(c);
             if (tokenToIdMap.containsKey(sym)) {
                 result.add(sym);
@@ -212,10 +251,9 @@ public class BPETokenizer implements Tokenizer {
                     result.add("<0x" + String.format("%02X", b & 0xFF) + ">");
                 }
             }
-            i++;
         }
 
-        // Apply BPE merges iteratively according to rank order
+        // Apply BPE merges iteratively according to rank order on this chunk
         while (result.size() >= 2) {
             Pair bestPair = null;
             int minRank = Integer.MAX_VALUE;
@@ -238,7 +276,11 @@ public class BPETokenizer implements Tokenizer {
             result.remove(bestIdx + 1);
         }
 
-        return result;
+        List<String> unmodifiable = Collections.unmodifiableList(result);
+        if (wordCache.size() < 100000) {
+            wordCache.put(chunk, unmodifiable);
+        }
+        return unmodifiable;
     }
 
     @Override

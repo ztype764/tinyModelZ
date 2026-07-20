@@ -42,7 +42,7 @@ public class TrainTinyStories {
         int numLayers = 2;
         int numHeads = 2;
         int feedForwardDim = 4 * embedDim;
-        String tokenizerTypeArg = "character";
+        String tokenizerTypeArg = "bpe";
         String resumePath = null;
         int requestedStartEpoch = -1;
 
@@ -152,24 +152,41 @@ public class TrainTinyStories {
                 }
             }
             if (checkpointRunDir == null || !checkpointRunDir.exists()) {
-                // Auto-discover latest run matching dataset/tokenizer
-                File baseDir = new File("checkpoints");
-                if (baseDir.exists() && baseDir.isDirectory()) {
-                    File[] subdirs = baseDir.listFiles(File::isDirectory);
+                // Auto-discover latest run matching dataset/tokenizer inside checkpoints/tinystories or checkpoints
+                List<File> candidateDirs = new java.util.ArrayList<>();
+                File tinystoriesBase = new File("checkpoints", "tinystories");
+                if (tinystoriesBase.exists() && tinystoriesBase.isDirectory()) {
+                    File[] subdirs = tinystoriesBase.listFiles(File::isDirectory);
                     if (subdirs != null) {
-                        File latestRun = null;
-                        long lastModified = 0;
-                        for (File dir : subdirs) {
-                            if (dir.lastModified() > lastModified && findLatestEpochCheckpoint(dir) != null) {
-                                lastModified = dir.lastModified();
-                                latestRun = dir;
+                        for (File s : subdirs) {
+                            if (!s.getName().startsWith("epoch_") && !s.getName().equals("best_checkpoint")) {
+                                candidateDirs.add(s);
                             }
                         }
-                        if (latestRun != null) {
-                            checkpointRunDir = latestRun;
-                            resumeCheckpointDir = findLatestEpochCheckpoint(latestRun);
+                    }
+                    candidateDirs.add(tinystoriesBase);
+                }
+                File rootCheckpoints = new File("checkpoints");
+                if (rootCheckpoints.exists() && rootCheckpoints.isDirectory()) {
+                    File[] subdirs = rootCheckpoints.listFiles(File::isDirectory);
+                    if (subdirs != null) {
+                        for (File s : subdirs) {
+                            if (!s.getName().equals("tinystories")) candidateDirs.add(s);
                         }
                     }
+                }
+
+                File latestRun = null;
+                long lastModified = 0;
+                for (File dir : candidateDirs) {
+                    if (dir.lastModified() > lastModified && findLatestEpochCheckpoint(dir) != null) {
+                        lastModified = dir.lastModified();
+                        latestRun = dir;
+                    }
+                }
+                if (latestRun != null) {
+                    checkpointRunDir = latestRun;
+                    resumeCheckpointDir = findLatestEpochCheckpoint(latestRun);
                 }
             }
         }
@@ -234,7 +251,7 @@ public class TrainTinyStories {
             String cleanDatasetName = datasetFile.getFileName().toString().replace(".txt", "").replaceAll("[^a-zA-Z0-9_]", "_");
             String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
             String runFolderName = cleanDatasetName + "_" + tokenizerType.toSubfolderName() + "_" + timestamp;
-            checkpointRunDir = new File("checkpoints", runFolderName);
+            checkpointRunDir = new File(new File("checkpoints", "tinystories"), runFolderName);
         }
 
         if (!checkpointRunDir.exists() && !checkpointRunDir.mkdirs()) {

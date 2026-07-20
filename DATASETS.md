@@ -19,28 +19,33 @@ String rawText = Files.readString(Path.of("path/to/dataset.txt"));
 ---
 
 ## 🔤 Step 2: Initialize the Tokenizer
-You can tokenize datasets at either the character level or using subword units (WordPiece).
+You can construct and initialize tokenizers using `TokenizerFactory`, supporting Byte-Pair Encoding (`BPE`), Character-level (`CHARACTER`), or WordPiece (`TRIE`).
 
-### Option A: WordPiece (Subword) Tokenizer
-Provide a list of vocabulary tokens. The `TrieTokenizer` uses a prefix tree to find the longest subword matches.
+### Option A: Byte-Pair Encoding (BPE) Tokenizer (Recommended)
+Automatically extracts character base vocabularies, learns merge frequencies, and preserves special control tokens like `<|endoftext|>`.
 
 ```java
-import com.tinymodelz.tokenizer.TrieTokenizer;
+import com.tinymodelz.tokenizer.TokenizerFactory;
+import com.tinymodelz.tokenizer.TokenizerFactory.TokenizerType;
+import com.tinymodelz.tokenizer.Tokenizer;
 import java.util.List;
 
-List<String> vocab = List.of("hello", "world", "play", "##er", "##ing", "tiny", "model", "z");
-TrieTokenizer tokenizer = new TrieTokenizer(vocab);
+List<String> specialTokens = List.of("<|endoftext|>");
+Tokenizer tokenizer = TokenizerFactory.createTokenizer(TokenizerType.BPE, rawText, specialTokens);
 ```
 
 ### Option B: Character-level Tokenizer
-Provide a list of unique character strings. Any unrecognized character is mapped to `[UNK]`.
+Lossless character-level tokenizer extracting unique characters from the corpus.
 
 ```java
-import com.tinymodelz.tokenizer.CharacterTokenizer;
-import java.util.List;
+Tokenizer tokenizer = TokenizerFactory.createTokenizer(TokenizerType.CHARACTER, rawText, specialTokens);
+```
 
-List<String> vocab = List.of("h", "e", "l", "o", " ", "w", "r", "d", "a", "b", "c");
-CharacterTokenizer tokenizer = new CharacterTokenizer(vocab);
+### Option C: WordPiece Trie Tokenizer
+Trie prefix tree based tokenizer for MaxMatch subword tokenization.
+
+```java
+Tokenizer tokenizer = TokenizerFactory.createTokenizer(TokenizerType.TRIE, rawText, specialTokens);
 ```
 
 ---

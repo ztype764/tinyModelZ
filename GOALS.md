@@ -36,8 +36,8 @@
 ## 🔤 Tokenizer Subsystem
 - [x] Character-level tokenizer (`CharacterTokenizer`)
 - [x] Trie-based subword tokenizer (`TrieTokenizer` with WordPiece MaxMatch algorithm)
-- [x] Unified `Tokenizer` contract interface for flexible tokenization strategy switching
-- [x] **Byte-Pair Encoding (BPE) Tokenizer** (`BPETokenizer.java` with subword pair merging and byte-level fallback)
+- [x] **Byte-Pair Encoding (BPE) Tokenizer** (`BPETokenizer.java` with subword pair merging and special control tokens)
+- [x] **Modular Tokenizer Factory & Serialization** (`TokenizerFactory.java` supporting dynamic strategy selection and lifecycle management)
 
 ## 🏋️ Training Infrastructure & Optimization
 - [x] `TextDataset` text-to-token stream wrapper
@@ -45,11 +45,11 @@
 - [x] `CrossEntropyLoss` with log-sum-exp numerical stabilization and autograd backward pass
 - [x] `AdamW` optimizer with decoupled weight decay, momentum ($\beta_1$), RMSprop variance ($\beta_2$), and bias correction
 - [x] L2 Gradient Clipping (`Trainer.clipGradients`) for global gradient norm stabilization ($\le 1.0$)
-- [x] `LRScheduler` with 5% Linear Warmup and Cosine Annealing decay
+- [x] `LRScheduler` with 5% Linear Warmup, Cosine Annealing decay, and step synchronization upon resume
 - [x] Granular nanosecond execution profiler (`Profiler.java` tracking Forward, Backward, Optimizer, Batch Prep, Checkpointing, and Peak RAM)
 - [x] Validation evaluation pass tracking validation loss and perplexity
-- [x] Best checkpoint retention (`best_checkpoint` saving on validation loss minimum)
-- [x] Lossless training state persistence (`Checkpoint.java` serializing model weights, AdamW $m/v$ state vectors, step counts, and metadata for exact resumption)
+- [x] **Structured Timestamped Checkpoint Subdirectories** (`checkpoints/<dataset>_<tokenizer>_<timestamp>/`) retaining model runs and `run_info.properties`
+- [x] **Lossless Training Resumption** (`Checkpoint.java` & `TrainTinyStories` restoring parameters, AdamW $m,v$ state vectors, step counts, and starting from specific epochs)
 
 ## 🔮 Autoregressive Inference & Sampling
 - [x] Argmax Greedy decoding
@@ -61,7 +61,8 @@
 - [x] **Rotary Position Embeddings (RoPE)** (`RotaryEmbedding.java`) for relative positional encoding
 
 ## 🖥️ API, CLI & GraalVM Native Image
-- [x] Interactive terminal prompt generator & CLI runner
+- [x] Interactive terminal prompt runner & run discovery tool (`PromptRunner` listing available checkpoints and loading target tokenizers)
+- [x] CLI argument parser for training & resumption (`TrainTinyStories --tokenizer --resume --start-epoch`)
 - [x] Spring Boot REST API endpoints (`/api/generate`, `/api/tokenize`)
 - [x] Interactive web visualizer UI
 - [x] GraalVM Native Image compilation (<85MB RSS, sub-100ms cold startup)
@@ -74,6 +75,6 @@
 ---
 
 ## 🔮 Future Scaling & Architectural Upgrades (10M–100M Parameters)
-- [ ] **FlashAttention OpenCL Kernel**: Tiled online softmax attention reducing memory complexity from $O(N^2)$ to $O(N)$
+- [ ] **FlashAttention OpenCL/CUDA/Metal Kernel**: Tiled online softmax attention reducing memory complexity from $O(N^2)$ to $O(N)$
 - [ ] **Mixed Precision Training (FP16 / BF16)**: Half-precision matrix multiplication for $2\times$ memory throughput
-- [ ] **Distributed Multi-GPU Training**: Data parallel training across multiple OpenCL devices
+- [ ] **Distributed Multi-GPU Training**: Data parallel training across multiple OpenCL/CUDA/Metal devices

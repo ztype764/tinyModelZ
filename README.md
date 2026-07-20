@@ -1,6 +1,6 @@
 # tinyModelZ - Custom Tokenizer, Math Engine, and Training/Inference Loop
 
-A custom, from-scratch Java implementation of a WordPiece/MaxMatch tokenizer, character-level tokenizer, tensor-based autograd engine, transformer block, training optimizer, and autoregressive generation generator.
+A custom, from-scratch Java implementation of a WordPiece/MaxMatch tokenizer, BPE tokenizer, character-level tokenizer, tensor-based autograd engine, transformer block with KV Cache and RoPE, training optimizer with checkpoint resumption, and autoregressive text generator.
 
 ---
 
@@ -19,7 +19,8 @@ tinyModelZ/
 │   │   │   ├── DeviceManager.java      # Hardware compute device state manager
 │   │   │   └── MathIO.java             # TMA1/TMAT binary weight saving/loading
 │   │   ├── gpu/
-│   │   │   └── GPUMathEngine.java      # OpenCL JNI native GPU hardware acceleration engine
+│   │   │   ├── GPUMathEngine.java      # OpenCL JNI native GPU hardware acceleration engine
+│   │   │   └── CUDAMathEngine.java     # CUDA Driver PTX native acceleration engine
 │   │   ├── nn/
 │   │   │   ├── Module.java             # Abstract base neural network module
 │   │   │   ├── Linear.java             # Fully connected linear layer
@@ -28,38 +29,51 @@ tinyModelZ/
 │   │   │   ├── LayerNorm.java          # Layer normalization layer
 │   │   │   ├── Dropout.java            # Stochastic regularizer layer
 │   │   │   ├── MultiHeadAttention.java # Scaled dot-product causal attention
+│   │   │   ├── KVCache.java            # Key-Value cache for $O(1)$ decoding
+│   │   │   ├── RotaryEmbedding.java    # Rotary Position Embeddings (RoPE)
 │   │   │   ├── FeedForward.java        # Transformer MLP feed-forward block
 │   │   │   ├── TransformerBlock.java   # Complete encoder/decoder transformer block
 │   │   │   └── CrossEntropyLoss.java   # Log-Softmax loss with autograd backprop
 │   │   ├── tokenizer/
-│   │   │   ├── TrieNode.java           # Trie tree nodes and state transition mappings
-│   │   │   ├── Trie.java               # Insertion, lookup, and longest prefix matching (MaxMatch)
 │   │   │   ├── Tokenizer.java          # Base tokenizer interface contract
+│   │   │   ├── TokenizerFactory.java   # Dynamic factory for Character, BPE, and Trie tokenizers
+│   │   │   ├── CharacterTokenizer.java # Lossless character-level tokenizer
+│   │   │   ├── BPETokenizer.java       # Byte-Pair Encoding subword tokenizer
 │   │   │   ├── TrieTokenizer.java      # WordPiece subword splitter & pre-tokenization
-│   │   │   └── CharacterTokenizer.java # Lossless character-level tokenizer
+│   │   │   └── Trie.java               # Insertion, lookup, and longest prefix matching (MaxMatch)
 │   │   ├── train/
 │   │   │   ├── TextDataset.java        # Wraps text to list of token IDs
 │   │   │   ├── DataLoader.java         # Minibatching and shifted labels for next-token prediction
-│   │   │   ├── AdamW.java              # Coupled/Decoupled weight decay Adam optimizer
-│   │   │   └── Checkpoint.java         # Model checkpoints save and reload
+│   │   │   ├── Trainer.java            # Training loop with validation & gradient clipping
+│   │   │   ├── TrainTinyStories.java   # CLI entry point for full pipeline execution & resumption
+│   │   │   ├── AdamW.java              # Decoupled weight decay Adam optimizer
+│   │   │   ├── LRScheduler.java        # Warmup and Cosine Annealing scheduler with step sync
+│   │   │   └── Checkpoint.java         # Model checkpoints save, load, and resumption
 │   │   ├── inference/
-│   │   │   └── Generator.java          # Autoregressive decoder with Greedy, Temp, Top-K, Top-P sampling
+│   │   │   ├── Generator.java          # Autoregressive decoder with Greedy, Temp, Top-K, Top-P sampling
+│   │   │   └── PromptRunner.java       # Interactive CLI prompt runner with run & epoch selection
 │   │   └── Application.java            # Spring Boot main class
 │   └── test/java/com/tinymodelz/
 │       ├── TestReporter.java           # Visual HTML5 test report generator
 │       ├── TestRunner.java             # Entry point to execute all unit tests
-│       ├── math/
-│       │   └── MathEngineTest.java     # Math Engine unit tests
-│       ├── nn/
-│       │   └── TransformerTest.java    # Neural Network layers and Transformer block tests
 │       ├── tokenizer/
-│       │   ├── TrieTest.java           # Trie unit tests
-│       │   ├── TrieTokenizerTest.java  # WordPiece tokenizer unit tests
-│       │   └── CharacterTokenizerTest.java # Character-level tokenizer unit tests
+│       │   ├── CharacterTokenizerTest.java
+│       │   ├── BPETokenizerTest.java
+│       │   └── TrieTokenizerTest.java
 │       ├── train/
-│       │   └── TrainingTest.java       # Loss, AdamW, Checkpoints, and E2E training tests
-│       └── inference/
-│           └── GeneratorTest.java      # Greedy, Temperature, Top-K, Top-P sampling tests
+│       │   ├── TrainingTest.java
+│       │   └── TokenizerAndResumeTest.java # Multi-tokenizer & epoch 2 resumption unit tests
+│       └── nn/
+│           └── KVCacheTest.java
+├── checkpoints/                        # Model run subdirectories
+│   └── tinystories/                    # Base directory for TinyStories training runs
+│       └── <run_name>/                 # Isolated run folder (e.g. TinyStories_valid_reduced_bpe_20260720_234500)
+│           ├── epoch_1/                # Per-epoch model checkpoints
+│           ├── epoch_2/
+│           ├── run_info.properties     # Training metadata (dataset, tokenizer, hyperparameters)
+│           ├── tokenizer_config.properties
+│           ├── vocab.txt               # Serialized vocabulary
+│           └── bpe_merges.txt          # BPE merge rules (for BPE tokenizer)
 ├── RULES.md                            # Project rules and engineering constraints
 ├── GOALS.md                            # Project goals checklist
 ├── pom.xml                             # Maven project configuration file
@@ -68,108 +82,70 @@ tinyModelZ/
 
 ---
 
-## 🏋️ Training Infrastructure (`com.tinymodelz.train`)
+## 🔤 Modular Tokenizer Infrastructure (`com.tinymodelz.tokenizer`)
+TinyModelZ includes a centralized `TokenizerFactory` supporting 3 tokenizer types:
+1. **BPETokenizer (`bpe`)**: Byte-Pair Encoding subword algorithm with iterative merge ranking and special control token support (`<|endoftext|>`). Default for training.
+2. **CharacterTokenizer (`character`)**: Lossless character-level encoding with automatic character set extraction.
+3. **TrieTokenizer (`trie`)**: WordPiece subword tokenizer using a Trie prefix tree for MaxMatch greedy tokenization.
+
+The factory handles serialization and re-loading of tokenizer configurations (`tokenizer_config.properties`, `vocab.txt`, `bpe_merges.txt`) into checkpoint directories.
+
+---
+
+## 🏋️ Training Infrastructure & Checkpoint Resumption (`com.tinymodelz.train`)
+*   **Default Tokenizer**: Training pipeline uses **BPE** (`bpe`) by default.
+*   **Isolated Run Subdirectories**: For each non-resumed training run, a dedicated subfolder is created inside `checkpoints/tinystories/<dataset>_<tokenizer>_<timestamp>/`.
 *   **Shifted Target Labels**: `DataLoader` automatically produces input sequences and target sequences shifted by exactly one index position ($y_t = x_{t+1}$) for training next-token prediction models.
-*   **Numerical Stability**: `CrossEntropyLoss` implements the log-sum-exp trick to avoid overflow/underflow, coupled with a custom backwards hook registered in the autograd topological sort.
-*   **Decoupled Weight Decay**: `AdamW` features decoupled momentum ($\beta_1$), RMSprop-like variance ($\beta_2$), bias corrections ($\hat{m}_t, \hat{v}_t$), and isolated parameter tracking tables to prevent state leaks.
+*   **Decoupled Weight Decay**: `AdamW` features decoupled momentum ($\beta_1$), RMSprop-like variance ($\beta_2$), bias corrections ($\hat{m}_t, \hat{v}_t$), and isolated parameter tracking tables.
 *   **L2 Gradient Clipping**: Limits global gradient norms ($\|g\|_2 \le 1.0$) to stabilize deep transformer training.
-*   **Linear Warmup & Cosine Decay**: `LRScheduler` linearly warms up learning rate over 5% of training steps before cosine decaying to minimum floor.
-*   **Detailed Profiler**: `Profiler` logs nanosecond execution timing breakdowns per epoch (Forward, Backward, Optimizer, Batch prep, Checkpointing, Peak RAM).
-*   **Complete Checkpoint Persistence**: `Checkpoint` serializes model weights, AdamW optimizer momentum ($m$) and variance ($v$) vectors, step counters, and metadata properties for exact training restoration.
+*   **Linear Warmup & Cosine Decay**: `LRScheduler` linearly warms up learning rate over 5% of training steps before cosine decaying to minimum floor, with support for step synchronization during training resumption.
+*   **Robust Training Resumption**: Allows interrupting and restarting training at any epoch (e.g. resuming from epoch 2 onwards). Re-loads model parameters, optimizer momentum/variance, and total step count automatically.
 
 ---
 
 ## 🔮 Inference & Sampling Generator (`com.tinymodelz.inference`)
 The `Generator` class supports autoregressive generation using:
-1.  **Greedy Decoding**: Selects the argmax token index.
-2.  **Temperature Scaling**: Modifies the logit distribution confidence before soft-max scaling.
-3.  **Top-K Filtering**: Truncates search space to the top $K$ highest-probability tokens.
-4.  **Top-P (Nucleus) Sampling**: Dynamically filters logits keeping only the smallest set of tokens whose cumulative probability exceeds threshold $P$.
-5.  **Repetition Penalty**: Scales previously generated token logits by penalty factor ($1.15\times$) to prevent repetitive loops.
+1.  **Key-Value (KV) Cache**: Caches Key and Value attention matrices for $O(1)$ decoding throughput.
+2.  **Greedy Decoding**: Selects the argmax token index.
+3.  **Temperature Scaling**: Modifies logit distribution entropy before soft-max scaling.
+4.  **Top-K Filtering**: Truncates search space to top $K$ probability tokens.
+5.  **Top-P (Nucleus) Sampling**: Dynamically selects tokens exceeding cumulative probability threshold $P$.
+6.  **Repetition Penalty**: Applies $1.15\times$ logit scaling to previously generated tokens to prevent repetitive loops.
 
 ---
 
 ## ⚡ GPU Powered Training (`com.tinymodelz.gpu`)
-* **OpenCL Compute Backend**: Native hardware-accelerated matrix multiplication (`libtinymodelz_gpu.so`) built directly into the framework.
-* **Persistent Buffer Allocation Pooling**: Reuses OpenCL memory buffers across iterations, reducing test suite execution latency by **4x** (from 385ms to 96ms).
-* **Automatic Hardware Probing**: Probes system for NVIDIA (CUDA/OpenCL), AMD (ROCm/OpenCL), or Intel GPUs at startup.
-* **Seamless Dynamic Switch**: Configure runtime device execution target via `DeviceManager.setDevice(Device.GPU)`.
-* **Zero-Downtime CPU Fallback**: Automatically falls back to multi-threaded CPU matrix operations if GPU driver or hardware is absent.
+* **OpenCL & CUDA Backends**: Native hardware acceleration via OpenCL (`libtinymodelz_gpu.so`) or NVIDIA Driver API (`libtinymodelz_cuda.so`).
+* **Persistent Buffer Pooling**: Reuses memory buffers across iterations, delivering a **4x speedup** on matrix operations.
+* **Automatic Hardware Probing**: Detects GPUs at startup with zero-downtime multi-threaded CPU fallback.
 
 ---
 
-## 🤖 Sending Prompts to the Trained Model
+## 🤖 Interactive & CLI Prompt Runner (`PromptRunner`)
 
-You can send text prompts to trained models using any of the following 3 convenient interfaces:
+`PromptRunner` scans `checkpoints/tinystories/` for saved runs and enables both interactive and CLI selection of training data/runs and specific epoch checkpoints:
 
-### 1. Interactive & CLI Prompt Runner (`PromptRunner`)
-Run the interactive CLI prompt runner via Maven:
+### 1. Interactive Selection Mode
+Simply launch `PromptRunner` without arguments:
 ```bash
-# Interactive REPL mode:
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" -Dexec.args="--checkpoint checkpoints/best_checkpoint"
-
-# Single-prompt non-interactive mode:
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" -Dexec.args="--prompt 'Once upon a time, a small dog' --max-tokens 50 --device gpu"
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
+  -Dexec.mainClass="com.tinymodelz.inference.PromptRunner"
 ```
+You will be prompted to:
+1. Select which **Training Run / Dataset** to use.
+2. Select which **Epoch Checkpoint** (`epoch_1`, `epoch_2`, `best_checkpoint`, etc.) to load.
 
-### 2. Spring Boot REST API Endpoint (`/api/generate`)
-Send an HTTP POST request to `/api/generate`:
+### 2. CLI Direct Selection & Listing Mode
 ```bash
-curl -X POST http://localhost:8080/api/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Once upon a time, a little girl",
-    "maxNewTokens": 40,
-    "temperature": 0.7,
-    "topK": 40,
-    "topP": 0.9
-  }'
-```
-**JSON Response:**
-```json
-{
-  "generatedText": "Once upon a time, a little girl found a small puppy in the garden and smiled.",
-  "prompt": "Once upon a time, a little girl",
-  "tokensGenerated": 40,
-  "latencyMs": 142,
-  "tokensPerSec": 281.7
-}
-```
+# List all available runs and epoch checkpoints
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
+  -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" \
+  -Dexec.args="--list"
 
-### 3. Interactive Web UI Prompt Playground
-Start the Spring Boot Web server:
-```bash
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn spring-boot:run
-```
-Open **`http://localhost:8080`** in your web browser to access the visual **Model Prompt Playground & Autoregressive Generator UI**.
-
----
-
-## 🛠️ Prerequisites & System Setup
-
-### 1. Requirements
-* **Java Development Kit (JDK)**: JDK 21 or GraalVM JDK 21+
-* **Build System**: Apache Maven 3.9+
-* **Native Compiler (Optional for GPU Acceleration)**: `gcc` with OpenCL headers (`libOpenCL.so` / `OpenCL.dll`)
-
-### 2. Environment Setup
-Set your `JAVA_HOME` environment variable to point to your installed JDK 21 or local GraalVM path:
-```bash
-# Set JDK 21 / GraalVM path
-export JAVA_HOME=/path/to/jdk-21
-export PATH=$JAVA_HOME/bin:$PATH
-```
-
-### 3. Compiling Native GPU Acceleration Engines
-Compile the JNI dynamic libraries for OpenCL and/or CUDA:
-```bash
-mkdir -p src/main/resources/native
-
-# Compile OpenCL GPU Engine
-gcc -shared -fPIC -O3 -I"tools/graalvm/include" -I"tools/graalvm/include/linux" -I src/main/c src/main/c/gpu_engine_jni.c -ldl -lOpenCL -o src/main/resources/native/libtinymodelz_gpu.so
-
-# Compile Native CUDA Driver PTX Engine
-gcc -shared -fPIC -O3 -I"tools/graalvm/include" -I"tools/graalvm/include/linux" -I src/main/c src/main/c/cuda_engine_jni.c -ldl -o src/main/resources/native/libtinymodelz_cuda.so
+# Select training run by index/name and epoch by number/name
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
+  -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" \
+  -Dexec.args="--run 1 --epoch 3 --prompt 'Once upon a time' --device cuda"
 ```
 
 ---
@@ -177,97 +153,42 @@ gcc -shared -fPIC -O3 -I"tools/graalvm/include" -I"tools/graalvm/include/linux" 
 ## 🚀 Commands & Detailed Usage Guide
 
 ### 🧪 1. Running the Test Suite
-Run all unit and end-to-end integration tests (Tokenizer, Autograd, Layers, Checkpoints, OpenCL & CUDA GPU precision checks):
+Run all unit and end-to-end integration tests (Tokenizers, Autograd, Layers, Checkpoints, Resumption, OpenCL & CUDA GPU precision checks):
 ```bash
 JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java \
   -Dexec.mainClass="com.tinymodelz.TestRunner" \
   -Dexec.classpathScope="test"
 ```
-* **HTML Dashboard Report**: After completion, a visual test report dashboard is created at: `test_report.html`.
+* **HTML Dashboard Report**: Generates an interactive test report at `test_report.html`.
 
 ---
 
-### 📊 2. Running CPU vs OpenCL vs CUDA Speed Benchmarks (`BenchmarkRunner`)
-Run the 10-phase automated CPU vs OpenCL GPU vs CUDA GPU performance benchmark suite:
-```bash
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java \
-  -Dexec.mainClass="com.tinymodelz.benchmark.BenchmarkRunner" \
-  -Dexec.classpathScope="test" \
-  -Dexec.args="16 64 128 2 2"
-```
+### 🏋️ 2. Training TinyGPT Models (`TrainTinyStories`)
 
----
-
-### 🏋️ 3. Training TinyGPT Models (`TrainTinyStories`)
-Train the TinyGPT transformer architecture choosing your target compute backend:
+#### Standard Training Run (BPE Tokenizer Default)
 ```bash
-# Run Training on NVIDIA CUDA Native Driver Backend
 JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
   -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" \
-  -Dexec.args="TinyStories-valid-reduced.txt 5 16 64 cuda"
+  -Dexec.args="--dataset TinyStories-valid-reduced.txt --tokenizer bpe --epochs 5 --batch-size 16 --seq-len 64 --device cuda"
+```
 
-# Run Training on OpenCL Backend
+#### Resuming Training from Epoch 2 (or latest epoch checkpoint)
+```bash
 JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
   -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" \
-  -Dexec.args="TinyStories-valid-reduced.txt 5 16 64 opencl"
-
-# Run Training on CPU (All CPU Cores / Multi-threaded)
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
-  -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" \
-  -Dexec.args="TinyStories-valid-reduced.txt 5 16 64 cpu"
+  -Dexec.args="--resume checkpoints/tinystories/TinyStories_valid_reduced_bpe_20260720_234500 --epochs 5 --device cuda"
 ```
 
----
-
-### 🤖 4. Sending Prompts to the Model (CLI & Web UI)
-
-#### CLI Prompt Generator (`PromptRunner`)
-```bash
-# Interactive REPL mode:
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
-  -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" \
-  -Dexec.args="--checkpoint checkpoints/tinystories/best_checkpoint"
-
-# Single-prompt non-interactive mode using CUDA:
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
-  -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" \
-  -Dexec.args="--prompt 'Once upon a time, a small dog' --max-tokens 50 --device cuda"
-```
-
-#### Spring Boot REST API Endpoint (`/api/generate`)
-Start the REST API server:
-```bash
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn spring-boot:run
-```
-Send inference HTTP requests via `curl`:
-```bash
-curl -X POST http://localhost:8080/api/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Once upon a time, a little girl",
-    "maxNewTokens": 40,
-    "temperature": 0.7,
-    "topK": 40,
-    "topP": 0.9
-  }'
-```
-
----
-
-## 🔍 Flag & Argument Explanations
-
-| Flag / Parameter | Purpose & Description |
-| :--- | :--- |
-| **`JAVA_HOME=tools/graalvm`** | Specifies the exact JDK 21 / GraalVM distribution path to use for building and running. |
-| **`-Dexec.mainClass="..."`** | Passes the target main Java class entry point to Maven's `exec-maven-plugin`. |
-| **`-Dexec.classpathScope="test"`** | Configures Maven execution classpath to include test scope libraries (JUnit, test utility classes). |
-| **`-Dexec.args="..."`** | Forwards string command-line arguments directly to Java's `public static void main(String[] args)` method. |
-| **`cuda` / `opencl` / `gpu` / `cpu`** | Device execution target: `cuda` for NVIDIA Driver PTX API, `opencl` for OpenCL JNI, `gpu` for auto-detected GPU, or `cpu` for multi-threaded Java. |
+#### CLI Option Flags:
+* `--tokenizer [bpe|character|trie]`: Tokenization algorithm (default: `bpe`)
+* `--resume [folder]`: Path to existing run folder or specific `epoch_N` directory to resume training
+* `--start-epoch [N]`: Explicitly set starting epoch index when resuming
+* `--device [cuda|opencl|cpu]`: Execution target hardware engine
 
 ---
 
 ## 📝 Compliance with project RULES.md
 
-1. **No External ML Libraries**: Core mathematical, tensor, and backpropagation logic is implemented completely from scratch.
-2. **From-Scratch Algorithm Implementation**: Custom Trie tree, prefix matcher, WordPiece parser, character tokenizer, weight initializers, cross-entropy loss, AdamW, and binary serialization format.
-3. **Visual Reporting**: Automatic execution of a built-in reporter compiling status tables, logs, and success rates in a sleek, responsive dashboard (`test_report.html`).
+1. **No External ML Libraries**: Core mathematical, tensor, tokenizer, and backpropagation logic is built completely from scratch.
+2. **From-Scratch Algorithm Implementation**: Custom Trie tree, BPE merger, character tokenizer, weight initializers, cross-entropy loss, AdamW, and binary serialization format.
+3. **Visual Reporting**: Automatic generation of HTML test reports (`test_report.html`).
