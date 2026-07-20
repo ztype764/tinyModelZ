@@ -77,29 +77,48 @@ public class AdamW {
             float[] mState = m.computeIfAbsent(p, k -> new float[size]);
             float[] vState = v.computeIfAbsent(p, k -> new float[size]);
 
-            // Apply updates
-            for (int i = 0; i < size; i++) {
-                int idx = p.getContiguousToPhysicalOffset(i);
-                float g = grad[idx];
-                float w = data[idx];
+            // Apply updates in parallel for contiguous parameter tensors
+            if (p.isContiguous() && p.offset() == 0) {
+                java.util.stream.IntStream.range(0, size).parallel().forEach(i -> {
+                    float g = grad[i];
+                    float w = data[i];
 
-                // 1. Decoupled weight decay update
-                if (weightDecay != 0.0f) {
-                    w -= lr * weightDecay * w;
+                    if (weightDecay != 0.0f) {
+                        w -= lr * weightDecay * w;
+                    }
+
+                    float mVal = beta1 * mState[i] + (1.0f - beta1) * g;
+                    mState[i] = mVal;
+
+                    float vVal = beta2 * vState[i] + (1.0f - beta2) * g * g;
+                    vState[i] = vVal;
+
+                    float mHat = mVal / biasCorrection1;
+                    float vHat = vVal / biasCorrection2;
+
+                    data[i] = w - (lr / ((float) Math.sqrt(vHat) + eps)) * mHat;
+                });
+            } else {
+                for (int i = 0; i < size; i++) {
+                    int idx = p.getContiguousToPhysicalOffset(i);
+                    float g = grad[idx];
+                    float w = data[idx];
+
+                    if (weightDecay != 0.0f) {
+                        w -= lr * weightDecay * w;
+                    }
+
+                    float mVal = beta1 * mState[i] + (1.0f - beta1) * g;
+                    mState[i] = mVal;
+
+                    float vVal = beta2 * vState[i] + (1.0f - beta2) * g * g;
+                    vState[i] = vVal;
+
+                    float mHat = mVal / biasCorrection1;
+                    float vHat = vVal / biasCorrection2;
+
+                    data[idx] = w - (lr / ((float) Math.sqrt(vHat) + eps)) * mHat;
                 }
-
-                // 2. Momentum (first moment)
-                mState[i] = beta1 * mState[i] + (1.0f - beta1) * g;
-
-                // 3. RMSprop (second raw moment)
-                vState[i] = beta2 * vState[i] + (1.0f - beta2) * g * g;
-
-                // 4. Bias correction
-                float mHat = mState[i] / biasCorrection1;
-                float vHat = vState[i] / biasCorrection2;
-
-                // 5. Param update step
-                data[idx] = w - (lr / ((float) Math.sqrt(vHat) + eps)) * mHat;
             }
         }
     }
@@ -108,12 +127,12 @@ public class AdamW {
      * Resets the accumulated gradients of all parameters to zero.
      */
     public void zeroGrad() {
-        for (Tensor p : parameters) {
+        parameters.parallelStream().forEach(p -> {
             float[] grad = p.getGrad();
             if (grad != null) {
                 java.util.Arrays.fill(grad, 0.0f);
             }
-        }
+        });
     }
 
     /**

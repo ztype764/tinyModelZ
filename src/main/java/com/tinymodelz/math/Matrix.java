@@ -230,7 +230,8 @@ public class Matrix {
         }
 
         // --- GPU Hardware Compute Dispatch ---
-        if (DeviceManager.isGpuActive()) {
+        long totalFlops = (long) this.rows * this.cols * other.cols;
+        if (DeviceManager.isGpuActive() && totalFlops >= 200_000L) {
             int m = this.rows;
             int k = this.cols;
             int n = other.cols;

@@ -61,6 +61,7 @@ public class GPUMathEngine {
     private static native boolean nIsAvailable();
     private static native String nGetDeviceName();
     private static native boolean nMatMul(float[] a, float[] b, float[] c, int m, int n, int k);
+    private static native boolean nBatchedMatMul(float[] a, float[] b, float[] c, int numBatches, int m, int n, int k);
 
     /**
      * Checks whether the GPU hardware compute engine is initialized and operational.
@@ -99,6 +100,18 @@ public class GPUMathEngine {
             return nMatMul(a, b, c, m, n, k);
         } catch (Throwable t) {
             logger.error("GPU MatMul execution error: {}", t.getMessage());
+            return false;
+        }
+    }
+
+    public static boolean batchedMatmul(float[] a, float[] b, float[] c, int numBatches, int m, int n, int k) {
+        if (!isAvailable()) {
+            return false;
+        }
+        try {
+            return nBatchedMatMul(a, b, c, numBatches, m, n, k);
+        } catch (Throwable t) {
+            logger.error("GPU Batched MatMul execution error: {}", t.getMessage());
             return false;
         }
     }

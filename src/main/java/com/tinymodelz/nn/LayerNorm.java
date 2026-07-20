@@ -73,7 +73,7 @@ public class LayerNorm extends Module {
         float[] wData = weight.getData();
         float[] bData = bias.getData();
 
-        for (int i = 0; i < N; i++) {
+        java.util.stream.IntStream.range(0, N).parallel().forEach(i -> {
             int rowOffset = i * D;
             
             // Calculate Mean (mu)
@@ -99,7 +99,7 @@ public class LayerNorm extends Module {
                 xHat[rowOffset + j] = normalizedVal;
                 outData[rowOffset + j] = normalizedVal * wData[weight.offset() + j] + bData[bias.offset() + j];
             }
-        }
+        });
 
         Tensor result = new Tensor(outData, originalShape);
         if (x.requiresGrad() || weight.requiresGrad() || bias.requiresGrad()) {
@@ -130,16 +130,20 @@ public class LayerNorm extends Module {
                                 float xh = xHat[rowOffset + j];
                                 
                                 if (weight.requiresGrad()) {
-                                    wGrad[wOffset + j] += dy * xh;
+                                    synchronized (wGrad) {
+                                        wGrad[wOffset + j] += dy * xh;
+                                    }
                                 }
                                 if (bias.requiresGrad()) {
-                                    bGrad[bOffset + j] += dy;
+                                    synchronized (bGrad) {
+                                        bGrad[bOffset + j] += dy;
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Compute input gradient dX
+                    // Compute input gradient dX in parallel
                     if (x.requiresGrad()) {
                         if (x.getGrad() == null) {
                             x.accumulateGrad(new float[x.getData().length]);
@@ -147,7 +151,7 @@ public class LayerNorm extends Module {
                         float[] xGrad = x.getGrad();
                         int xGradOffset = x.offset();
 
-                        for (int i = 0; i < N; i++) {
+                        java.util.stream.IntStream.range(0, N).parallel().forEach(i -> {
                             int rowOffset = i * D;
                             float stdInv = invStd[i];
                             
@@ -169,7 +173,7 @@ public class LayerNorm extends Module {
                                 float dxVal = (stdInv / D) * (D * dy * wj - dBetaPrime - xhj * dGammaPrime);
                                 xGrad[xGradOffset + rowOffset + j] += dxVal;
                             }
-                        }
+                        });
                     }
                 }
             );

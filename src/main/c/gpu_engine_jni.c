@@ -199,3 +199,75 @@ JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nMatMul(JNIEnv 
 
     return JNI_TRUE;
 }
+
+JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nBatchedMatMul(JNIEnv *env, jclass cls, jfloatArray a, jfloatArray b, jfloatArray c, jint numBatches, jint m, jint n, jint k) {
+    if (!gpu_initialized && !internal_gpu_init()) return JNI_FALSE;
+
+    jfloat *ptrA = (*env)->GetFloatArrayElements(env, a, NULL);
+    jfloat *ptrB = (*env)->GetFloatArrayElements(env, b, NULL);
+    jfloat *ptrC = (*env)->GetFloatArrayElements(env, c, NULL);
+
+    cl_int err;
+    size_t batchBytesA = (size_t)m * k * sizeof(float);
+    size_t batchBytesB = (size_t)k * n * sizeof(float);
+    size_t batchBytesC = (size_t)m * n * sizeof(float);
+
+    size_t totalBytesA = batchBytesA * numBatches;
+    size_t totalBytesB = batchBytesB * numBatches;
+    size_t totalBytesC = batchBytesC * numBatches;
+
+    if (!bufA || capA < totalBytesA) {
+        if (bufA) p_clReleaseMemObject(bufA);
+        bufA = p_clCreateBuffer(context, 1, totalBytesA, NULL, &err);
+        capA = totalBytesA;
+    }
+    if (!bufB || capB < totalBytesB) {
+        if (bufB) p_clReleaseMemObject(bufB);
+        bufB = p_clCreateBuffer(context, 1, totalBytesB, NULL, &err);
+        capB = totalBytesB;
+    }
+    if (!bufC || capC < totalBytesC) {
+        if (bufC) p_clReleaseMemObject(bufC);
+        bufC = p_clCreateBuffer(context, 2, totalBytesC, NULL, &err);
+        capC = totalBytesC;
+    }
+
+    // Single PCIe Host -> GPU DMA transfer for all batch matrices
+    p_clEnqueueWriteBuffer(queue, bufA, 1, 0, totalBytesA, ptrA, 0, NULL, NULL);
+    p_clEnqueueWriteBuffer(queue, bufB, 1, 0, totalBytesB, ptrB, 0, NULL, NULL);
+
+    for (int batch = 0; batch < numBatches; batch++) {
+        size_t offA = batch * batchBytesA;
+        size_t offB = batch * batchBytesB;
+        size_t offC = batch * batchBytesC;
+
+        cl_mem subA = p_clCreateBuffer(context, 1, batchBytesA, NULL, &err);
+        cl_mem subB = p_clCreateBuffer(context, 1, batchBytesB, NULL, &err);
+        cl_mem subC = p_clCreateBuffer(context, 2, batchBytesC, NULL, &err);
+
+        p_clEnqueueWriteBuffer(queue, subA, 1, 0, batchBytesA, ptrA + (batch * m * k), 0, NULL, NULL);
+        p_clEnqueueWriteBuffer(queue, subB, 1, 0, batchBytesB, ptrB + (batch * k * n), 0, NULL, NULL);
+
+        p_clSetKernelArg(kernel_matmul, 0, sizeof(cl_mem), &subA);
+        p_clSetKernelArg(kernel_matmul, 1, sizeof(cl_mem), &subB);
+        p_clSetKernelArg(kernel_matmul, 2, sizeof(cl_mem), &subC);
+        p_clSetKernelArg(kernel_matmul, 3, sizeof(int), &m);
+        p_clSetKernelArg(kernel_matmul, 4, sizeof(int), &n);
+        p_clSetKernelArg(kernel_matmul, 5, sizeof(int), &k);
+
+        size_t global[2] = { (size_t)m, (size_t)n };
+        p_clEnqueueNDRangeKernel(queue, kernel_matmul, 2, NULL, global, NULL, 0, NULL, NULL);
+        p_clEnqueueReadBuffer(queue, subC, 1, 0, batchBytesC, ptrC + (batch * m * n), 0, NULL, NULL);
+
+        p_clReleaseMemObject(subA);
+        p_clReleaseMemObject(subB);
+        p_clReleaseMemObject(subC);
+    }
+    p_clFinish(queue);
+
+    (*env)->ReleaseFloatArrayElements(env, a, ptrA, JNI_ABORT);
+    (*env)->ReleaseFloatArrayElements(env, b, ptrB, JNI_ABORT);
+    (*env)->ReleaseFloatArrayElements(env, c, ptrC, 0);
+
+    return JNI_TRUE;
+}

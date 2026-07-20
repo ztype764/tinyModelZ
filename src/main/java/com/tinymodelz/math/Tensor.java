@@ -163,8 +163,14 @@ public class Tensor {
         if (this.grad == null) {
             this.grad = new float[this.data.length];
         }
-        for (int i = 0; i < incomingGrad.length; i++) {
-            this.grad[getContiguousToPhysicalOffset(i)] += incomingGrad[i];
+        if (isContiguous() && offset == 0) {
+            java.util.stream.IntStream.range(0, incomingGrad.length).parallel().forEach(i -> {
+                this.grad[i] += incomingGrad[i];
+            });
+        } else {
+            for (int i = 0; i < incomingGrad.length; i++) {
+                this.grad[getContiguousToPhysicalOffset(i)] += incomingGrad[i];
+            }
         }
     }
 
@@ -560,24 +566,9 @@ public class Tensor {
         Tensor BCont = other.toContiguous();
         
         // --- GPU Acceleration Dispatch ---
-        if (DeviceManager.isGpuActive()) {
-            boolean gpuSuccess = true;
-            for (int b = 0; b < numBatches; b++) {
-                float[] subA = new float[M * K];
-                float[] subB = new float[K * N];
-                float[] subOut = new float[M * N];
-
-                System.arraycopy(ACont.data, b * M * K, subA, 0, M * K);
-                System.arraycopy(BCont.data, b * K * N, subB, 0, K * N);
-
-                if (com.tinymodelz.gpu.GPUMathEngine.matmul(subA, subB, subOut, M, N, K)) {
-                    System.arraycopy(subOut, 0, outData, b * M * N, M * N);
-                } else {
-                    gpuSuccess = false;
-                    break;
-                }
-            }
-            if (gpuSuccess) {
+        long totalFlops = (long) numBatches * M * K * N;
+        if (DeviceManager.isGpuActive() && totalFlops >= 200_000L) {
+            if (com.tinymodelz.gpu.GPUMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches, M, N, K)) {
                 Tensor result = new Tensor(outData, outShape);
                 if (this.requiresGrad || other.requiresGrad) {
                     result.requiresGrad = true;
