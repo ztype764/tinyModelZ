@@ -118,15 +118,21 @@ public class BenchmarkRunner {
             logger.info("----------------------------------------------------------------------------------");
 
             BenchmarkRunResult cpuRes = executeSingleBenchmark(cfg, Device.CPU);
-            BenchmarkRunResult gpuRes = executeSingleBenchmark(cfg, Device.GPU);
-
+            BenchmarkRunResult openclRes = executeSingleBenchmark(cfg, Device.GPU_OPENCL);
             allResults.add(cpuRes);
-            allResults.add(gpuRes);
+            allResults.add(openclRes);
 
-            printPhase1OpBreakdownTable(cfg, cpuRes, gpuRes);
-            printPhase2MemoryReport(cfg, gpuRes);
-            printPhase3KernelReport(cfg, gpuRes);
-            printPhase9BottleneckAnalysis(cfg, cpuRes, gpuRes);
+            if (com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
+                BenchmarkRunResult cudaRes = executeSingleBenchmark(cfg, Device.GPU_CUDA);
+                allResults.add(cudaRes);
+                printPhase1OpBreakdownTable(cfg, cpuRes, openclRes);
+            } else {
+                printPhase1OpBreakdownTable(cfg, cpuRes, openclRes);
+            }
+
+            printPhase2MemoryReport(cfg, openclRes);
+            printPhase3KernelReport(cfg, openclRes);
+            printPhase9BottleneckAnalysis(cfg, cpuRes, openclRes);
         }
 
         printPhase8ComparisonReportTable(allResults);

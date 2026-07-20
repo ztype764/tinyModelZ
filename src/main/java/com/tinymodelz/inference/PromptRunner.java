@@ -71,7 +71,11 @@ public class PromptRunner {
             }
         }
 
-        if ("gpu".equalsIgnoreCase(deviceArg)) {
+        if ("cuda".equalsIgnoreCase(deviceArg)) {
+            DeviceManager.setDevice(Device.GPU_CUDA);
+        } else if ("opencl".equalsIgnoreCase(deviceArg)) {
+            DeviceManager.setDevice(Device.GPU_OPENCL);
+        } else if ("gpu".equalsIgnoreCase(deviceArg)) {
             DeviceManager.setDevice(Device.GPU);
         } else {
             DeviceManager.setDevice(Device.CPU);

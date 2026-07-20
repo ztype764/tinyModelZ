@@ -242,7 +242,13 @@ public class Matrix {
             }
 
             float[] flatC = new float[m * n];
-            if (com.tinymodelz.gpu.GPUMathEngine.matmul(flatA, flatB, flatC, m, n, k)) {
+            boolean success = false;
+            if (DeviceManager.getDevice() == Device.GPU_CUDA && com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
+                success = com.tinymodelz.gpu.CUDAMathEngine.matmul(flatA, flatB, flatC, m, n, k);
+            } else {
+                success = com.tinymodelz.gpu.GPUMathEngine.matmul(flatA, flatB, flatC, m, n, k);
+            }
+            if (success) {
                 float[][] result = new float[m][n];
                 for (int i = 0; i < m; i++) {
                     System.arraycopy(flatC, i * n, result[i], 0, n);

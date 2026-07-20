@@ -160,11 +160,16 @@ export JAVA_HOME=/path/to/jdk-21
 export PATH=$JAVA_HOME/bin:$PATH
 ```
 
-### 3. Compiling the Native OpenCL GPU Engine
-If modifying native C acceleration code (`src/main/c/gpu_engine_jni.c`), compile the JNI dynamic library manually:
+### 3. Compiling Native GPU Acceleration Engines
+Compile the JNI dynamic libraries for OpenCL and/or CUDA:
 ```bash
 mkdir -p src/main/resources/native
-gcc -shared -fPIC -O3 -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -I src/main/c src/main/c/gpu_engine_jni.c -ldl -lOpenCL -o src/main/resources/native/libtinymodelz_gpu.so
+
+# Compile OpenCL GPU Engine
+gcc -shared -fPIC -O3 -I"tools/graalvm/include" -I"tools/graalvm/include/linux" -I src/main/c src/main/c/gpu_engine_jni.c -ldl -lOpenCL -o src/main/resources/native/libtinymodelz_gpu.so
+
+# Compile Native CUDA Driver PTX Engine
+gcc -shared -fPIC -O3 -I"tools/graalvm/include" -I"tools/graalvm/include/linux" -I src/main/c src/main/c/cuda_engine_jni.c -ldl -o src/main/resources/native/libtinymodelz_cuda.so
 ```
 
 ---
@@ -172,7 +177,7 @@ gcc -shared -fPIC -O3 -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -I src
 ## 🚀 Commands & Detailed Usage Guide
 
 ### 🧪 1. Running the Test Suite
-Run all unit and end-to-end integration tests (Tokenizer, Autograd, Layers, Checkpoint reload, and OpenCL GPU precision checks):
+Run all unit and end-to-end integration tests (Tokenizer, Autograd, Layers, Checkpoints, OpenCL & CUDA GPU precision checks):
 ```bash
 JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java \
   -Dexec.mainClass="com.tinymodelz.TestRunner" \
@@ -182,8 +187,8 @@ JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java \
 
 ---
 
-### 📊 2. Running CPU vs GPU Speed Benchmarks (`BenchmarkRunner`)
-Run the 10-phase automated CPU vs GPU performance benchmark suite:
+### 📊 2. Running CPU vs OpenCL vs CUDA Speed Benchmarks (`BenchmarkRunner`)
+Run the 10-phase automated CPU vs OpenCL GPU vs CUDA GPU performance benchmark suite:
 ```bash
 JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java \
   -Dexec.mainClass="com.tinymodelz.benchmark.BenchmarkRunner" \
@@ -194,12 +199,17 @@ JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java \
 ---
 
 ### 🏋️ 3. Training TinyGPT Models (`TrainTinyStories`)
-Train the TinyGPT transformer architecture on the `TinyStories` dataset:
+Train the TinyGPT transformer architecture choosing your target compute backend:
 ```bash
-# Run Training on GPU (NVIDIA OpenCL Engine)
+# Run Training on NVIDIA CUDA Native Driver Backend
 JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
   -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" \
-  -Dexec.args="TinyStories-valid-reduced.txt 5 16 64 gpu"
+  -Dexec.args="TinyStories-valid-reduced.txt 5 16 64 cuda"
+
+# Run Training on OpenCL Backend
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
+  -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" \
+  -Dexec.args="TinyStories-valid-reduced.txt 5 16 64 opencl"
 
 # Run Training on CPU (All CPU Cores / Multi-threaded)
 JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
@@ -218,10 +228,10 @@ JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
   -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" \
   -Dexec.args="--checkpoint checkpoints/tinystories/best_checkpoint"
 
-# Single-prompt non-interactive mode:
+# Single-prompt non-interactive mode using CUDA:
 JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
   -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" \
-  -Dexec.args="--prompt 'Once upon a time, a small dog' --max-tokens 50 --device gpu"
+  -Dexec.args="--prompt 'Once upon a time, a small dog' --max-tokens 50 --device cuda"
 ```
 
 #### Spring Boot REST API Endpoint (`/api/generate`)
@@ -252,11 +262,7 @@ curl -X POST http://localhost:8080/api/generate \
 | **`-Dexec.mainClass="..."`** | Passes the target main Java class entry point to Maven's `exec-maven-plugin`. |
 | **`-Dexec.classpathScope="test"`** | Configures Maven execution classpath to include test scope libraries (JUnit, test utility classes). |
 | **`-Dexec.args="..."`** | Forwards string command-line arguments directly to Java's `public static void main(String[] args)` method. |
-| **`TinyStories-valid-reduced.txt`** | First position argument in `TrainTinyStories`: Path to text dataset file. |
-| **`5`** | Second position argument in `TrainTinyStories`: Number of training epochs. |
-| **`16`** | Third position argument in `TrainTinyStories`: Minibatch size. |
-| **`64`** | Fourth position argument in `TrainTinyStories`: Context length sequence window ($T$). |
-| **`gpu` / `cpu`** | Fifth position argument in `TrainTinyStories`: Execution device target (`gpu` for OpenCL, `cpu` for multi-threaded Java). |
+| **`cuda` / `opencl` / `gpu` / `cpu`** | Device execution target: `cuda` for NVIDIA Driver PTX API, `opencl` for OpenCL JNI, `gpu` for auto-detected GPU, or `cpu` for multi-threaded Java. |
 
 ---
 

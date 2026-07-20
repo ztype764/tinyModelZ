@@ -576,7 +576,13 @@ public class Tensor {
         // --- GPU Acceleration Dispatch ---
         long totalFlops = (long) numBatches * M * K * N;
         if (DeviceManager.isGpuActive() && totalFlops >= 200_000L) {
-            if (com.tinymodelz.gpu.GPUMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches, M, N, K)) {
+            boolean success = false;
+            if (DeviceManager.getDevice() == Device.GPU_CUDA && com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
+                success = com.tinymodelz.gpu.CUDAMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches, M, N, K);
+            } else {
+                success = com.tinymodelz.gpu.GPUMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches, M, N, K);
+            }
+            if (success) {
                 Tensor result = new Tensor(outData, outShape);
                 if (this.requiresGrad || other.requiresGrad) {
                     result.requiresGrad = true;

@@ -39,7 +39,11 @@ public class TrainTinyStories {
         int seqLen = args.length > 3 ? Integer.parseInt(args[3]) : 64;
         String deviceArg = args.length > 4 ? args[4] : "gpu";
 
-        if ("gpu".equalsIgnoreCase(deviceArg)) {
+        if ("cuda".equalsIgnoreCase(deviceArg)) {
+            com.tinymodelz.math.DeviceManager.setDevice(com.tinymodelz.math.Device.GPU_CUDA);
+        } else if ("opencl".equalsIgnoreCase(deviceArg)) {
+            com.tinymodelz.math.DeviceManager.setDevice(com.tinymodelz.math.Device.GPU_OPENCL);
+        } else if ("gpu".equalsIgnoreCase(deviceArg)) {
             com.tinymodelz.math.DeviceManager.setDevice(com.tinymodelz.math.Device.GPU);
         } else {
             com.tinymodelz.math.DeviceManager.setDevice(com.tinymodelz.math.Device.CPU);
