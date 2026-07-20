@@ -177,13 +177,31 @@ public class BPETokenizer implements Tokenizer {
         }
     }
 
+    public Map<Pair, Integer> getMergeRanks() {
+        return Collections.unmodifiableMap(mergeRanks);
+    }
+
     @Override
     public List<String> tokenize(String text) {
         if (text == null || text.isEmpty()) return Collections.emptyList();
 
+        List<String> specialTokens = List.of(EOS_TOKEN, UNK_TOKEN, PAD_TOKEN);
+
         List<String> result = new ArrayList<>();
-        // Split by whitespace preserving spaces as separate tokens or characters
-        for (int i = 0; i < text.length(); i++) {
+        int i = 0;
+        int len = text.length();
+        while (i < len) {
+            boolean matchedSpecial = false;
+            for (String special : specialTokens) {
+                if (text.startsWith(special, i)) {
+                    result.add(special);
+                    i += special.length();
+                    matchedSpecial = true;
+                    break;
+                }
+            }
+            if (matchedSpecial) continue;
+
             char c = text.charAt(i);
             String sym = String.valueOf(c);
             if (tokenToIdMap.containsKey(sym)) {
@@ -194,6 +212,7 @@ public class BPETokenizer implements Tokenizer {
                     result.add("<0x" + String.format("%02X", b & 0xFF) + ">");
                 }
             }
+            i++;
         }
 
         // Apply BPE merges iteratively according to rank order
@@ -202,13 +221,13 @@ public class BPETokenizer implements Tokenizer {
             int minRank = Integer.MAX_VALUE;
             int bestIdx = -1;
 
-            for (int i = 0; i < result.size() - 1; i++) {
-                Pair p = new Pair(result.get(i), result.get(i + 1));
+            for (int k = 0; k < result.size() - 1; k++) {
+                Pair p = new Pair(result.get(k), result.get(k + 1));
                 Integer rank = mergeRanks.get(p);
                 if (rank != null && rank < minRank) {
                     minRank = rank;
                     bestPair = p;
-                    bestIdx = i;
+                    bestIdx = k;
                 }
             }
 

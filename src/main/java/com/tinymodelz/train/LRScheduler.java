@@ -71,4 +71,8 @@ public class LRScheduler {
     public int getCurrentStep() {
         return currentStep;
     }
+
+    public void setCurrentStep(int step) {
+        this.currentStep = Math.max(0, step);
+    }
 }

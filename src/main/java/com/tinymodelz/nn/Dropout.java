@@ -50,7 +50,8 @@ public class Dropout extends Module {
 
         int size = x.size();
         float[] outData = new float[size];
-        float[] mask = new float[size];
+        boolean needsGrad = x.requiresGrad();
+        float[] mask = needsGrad ? new float[size] : null;
         float scale = 1.0f / (1.0f - p);
 
         Tensor contiguousX = x.toContiguous();
@@ -59,10 +60,10 @@ public class Dropout extends Module {
 
         for (int i = 0; i < size; i++) {
             if (random.nextFloat() >= p) {
-                mask[i] = 1.0f;
+                if (needsGrad) mask[i] = 1.0f;
                 outData[i] = xData[xOffset + i] * scale;
             } else {
-                mask[i] = 0.0f;
+                if (needsGrad) mask[i] = 0.0f;
                 outData[i] = 0.0f;
             }
         }

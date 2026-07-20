@@ -35,6 +35,9 @@ public class Tensor {
     private final int[] strides;
     private final int size;
     private final int offset;
+    private final boolean contiguous;
+
+    private static final int PARALLEL_THRESHOLD = 8192;
 
     // Autograd fields
     private float[] grad;
@@ -46,6 +49,15 @@ public class Tensor {
     @FunctionalInterface
     public interface BackwardFunction {
         void apply(float[] gradOutput);
+    }
+
+    private static boolean checkContiguous(int[] shape, int[] strides, int offset) {
+        if (offset != 0) return false;
+        int[] standard = computeStrides(shape);
+        for (int i = 0; i < shape.length; i++) {
+            if (strides[i] != standard[i]) return false;
+        }
+        return true;
     }
 
     /**
@@ -60,6 +72,7 @@ public class Tensor {
         this.strides = computeStrides(shape);
         this.offset = 0;
         this.requiresGrad = false;
+        this.contiguous = true;
     }
 
     /**
@@ -78,6 +91,7 @@ public class Tensor {
         this.strides = computeStrides(shape);
         this.offset = 0;
         this.requiresGrad = false;
+        this.contiguous = true;
     }
 
     /**
@@ -95,6 +109,7 @@ public class Tensor {
         this.size = computeSize(shape);
         this.offset = offset;
         this.requiresGrad = false;
+        this.contiguous = checkContiguous(this.shape, this.strides, this.offset);
     }
 
     // Helper constructor for contiguous views sharing data
@@ -124,6 +139,10 @@ public class Tensor {
 
     public int[] getShape() {
         return shape.clone();
+    }
+
+    int[] shapeRef() {
+        return shape;
     }
 
     public int[] getStrides() {
@@ -172,9 +191,15 @@ public class Tensor {
             this.grad = new float[this.data.length];
         }
         if (isContiguous() && offset == 0) {
-            java.util.stream.IntStream.range(0, incomingGrad.length).parallel().forEach(i -> {
-                this.grad[i] += incomingGrad[i];
-            });
+            if (incomingGrad.length > PARALLEL_THRESHOLD) {
+                java.util.stream.IntStream.range(0, incomingGrad.length).parallel().forEach(i -> {
+                    this.grad[i] += incomingGrad[i];
+                });
+            } else {
+                for (int i = 0; i < incomingGrad.length; i++) {
+                    this.grad[i] += incomingGrad[i];
+                }
+            }
         } else {
             for (int i = 0; i < incomingGrad.length; i++) {
                 this.grad[getContiguousToPhysicalOffset(i)] += incomingGrad[i];
@@ -207,11 +232,7 @@ public class Tensor {
     }
 
     public boolean isContiguous() {
-        int[] standard = computeStrides(shape);
-        for (int i = 0; i < shape.length; i++) {
-            if (strides[i] != standard[i]) return false;
-        }
-        return true;
+        return contiguous;
     }
 
     public Tensor toContiguous() {
@@ -529,6 +550,62 @@ public class Tensor {
         return result;
     }
 
+    /**
+     * Concatenates a list of tensors along a specified dimension.
+     *
+     * @param tensors list of input tensors with matching shapes (except along dim)
+     * @param dim dimension index to concatenate along
+     * @return a new Tensor resulting from concatenation
+     */
+    public static Tensor cat(List<Tensor> tensors, int dim) {
+        if (tensors == null || tensors.isEmpty()) {
+            throw new IllegalArgumentException("tensors list cannot be null or empty.");
+        }
+        Tensor first = tensors.get(0);
+        int rank = first.shape.length;
+        if (dim < 0) dim += rank;
+        
+        List<Tensor> contTensors = new ArrayList<>(tensors.size());
+        for (Tensor t : tensors) {
+            contTensors.add(t.toContiguous());
+        }
+
+        int[] outShape = first.shape.clone();
+        int catDimSize = 0;
+        for (Tensor t : contTensors) {
+            if (t.shape.length != rank) {
+                throw new IllegalArgumentException("Rank mismatch in cat: " + t.shape.length + " vs " + rank);
+            }
+            for (int d = 0; d < rank; d++) {
+                if (d != dim && t.shape[d] != first.shape[d]) {
+                    throw new IllegalArgumentException("Shape mismatch in cat along dim " + d);
+                }
+            }
+            catDimSize += t.shape[dim];
+        }
+        outShape[dim] = catDimSize;
+
+        int totalSize = computeSize(outShape);
+        float[] outData = new float[totalSize];
+
+        int outerSize = 1;
+        for (int i = 0; i < dim; i++) outerSize *= outShape[i];
+        int innerSize = 1;
+        for (int i = dim + 1; i < rank; i++) innerSize *= outShape[i];
+
+        int outOffset = 0;
+        for (int o = 0; o < outerSize; o++) {
+            for (Tensor t : contTensors) {
+                int tDimSize = t.shape[dim];
+                int copyLen = tDimSize * innerSize;
+                int srcOffset = o * copyLen;
+                System.arraycopy(t.data, t.offset + srcOffset, outData, outOffset, copyLen);
+                outOffset += copyLen;
+            }
+        }
+        return new Tensor(outData, outShape);
+    }
+
     // Matrix Multiplication (supports 2D and N-dimensional batch matrix multiplication)
     public Tensor matmul(Tensor other) {
         if (this.shape.length < 2 || other.shape.length < 2) {
@@ -739,11 +816,43 @@ public class Tensor {
     }
 
     public Tensor add(float val) {
-        return this.add(Tensor.scalar(val));
+        float[] outData = new float[size];
+        Tensor cont = this.toContiguous();
+        for (int i = 0; i < size; i++) {
+            outData[i] = cont.data[cont.offset + i] + val;
+        }
+        Tensor result = new Tensor(outData, shape);
+        if (this.requiresGrad) {
+            result.requiresGrad = true;
+            result.creators = List.of(this);
+            result.opName = "add_scalar";
+            result.backwardFn = (gradOutput) -> {
+                this.accumulateGrad(gradOutput);
+            };
+        }
+        return result;
     }
 
     public Tensor multiply(float val) {
-        return this.multiply(Tensor.scalar(val));
+        float[] outData = new float[size];
+        Tensor cont = this.toContiguous();
+        for (int i = 0; i < size; i++) {
+            outData[i] = cont.data[cont.offset + i] * val;
+        }
+        Tensor result = new Tensor(outData, shape);
+        if (this.requiresGrad) {
+            result.requiresGrad = true;
+            result.creators = List.of(this);
+            result.opName = "scale";
+            result.backwardFn = (gradOutput) -> {
+                float[] g = new float[gradOutput.length];
+                for (int i = 0; i < g.length; i++) {
+                    g[i] = gradOutput[i] * val;
+                }
+                this.accumulateGrad(g);
+            };
+        }
+        return result;
     }
 
 
@@ -941,7 +1050,7 @@ public class Tensor {
             grad = new float[data.length];
         }
         // Initialize output gradient to 1.0 (for scalar loss output)
-        Arrays.fill(grad, 1.0f);
+        Arrays.fill(grad, offset, offset + size, 1.0f);
         
         List<Tensor> order = new ArrayList<>();
         Set<Tensor> visited = new HashSet<>();

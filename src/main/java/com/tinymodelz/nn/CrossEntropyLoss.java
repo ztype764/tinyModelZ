@@ -66,15 +66,18 @@ public class CrossEntropyLoss extends Module {
                 }
             }
 
-            // Compute sum(exp(x - max))
+            // Compute sum(exp(x - max)) and store exp values
             float sumExp = 0.0f;
             for (int j = 0; j < V; j++) {
-                sumExp += (float) Math.exp(logitsData[i * V + j] - maxLogit);
+                float expVal = (float) Math.exp(logitsData[i * V + j] - maxLogit);
+                probs[i * V + j] = expVal;
+                sumExp += expVal;
             }
 
             // Probabilities and negative log-likelihood
+            float invSumExp = 1.0f / sumExp;
             for (int j = 0; j < V; j++) {
-                probs[i * V + j] = (float) Math.exp(logitsData[i * V + j] - maxLogit) / sumExp;
+                probs[i * V + j] *= invSumExp;
             }
 
             float sampleLoss = - (logitsData[i * V + targetIdx] - maxLogit) + (float) Math.log(sumExp);

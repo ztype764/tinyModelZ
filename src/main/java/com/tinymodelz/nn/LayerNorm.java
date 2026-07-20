@@ -130,14 +130,10 @@ public class LayerNorm extends Module {
                                 float xh = xHat[rowOffset + j];
                                 
                                 if (weight.requiresGrad()) {
-                                    synchronized (wGrad) {
-                                        wGrad[wOffset + j] += dy * xh;
-                                    }
+                                    wGrad[wOffset + j] += dy * xh;
                                 }
                                 if (bias.requiresGrad()) {
-                                    synchronized (bGrad) {
-                                        bGrad[bOffset + j] += dy;
-                                    }
+                                    bGrad[bOffset + j] += dy;
                                 }
                             }
                         }

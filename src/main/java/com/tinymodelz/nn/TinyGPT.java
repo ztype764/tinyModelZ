@@ -139,6 +139,18 @@ public class TinyGPT extends Module {
             throw new IllegalArgumentException("TinyGPT forward requires a token index tensor.");
         }
         Tensor tokenIds = inputs[0]; // [B, T]
+        return forwardWithCache(tokenIds, null, 0);
+    }
+
+    /**
+     * Forward pass with optional Key-Value caching for fast autoregressive inference.
+     *
+     * @param tokenIds token index tensor of shape [B, T]
+     * @param kvCache Key-Value cache containing previous token keys and values
+     * @param startPos starting position offset in sequence for positional embeddings
+     * @return logits tensor of shape [B, T, vocabSize]
+     */
+    public Tensor forwardWithCache(Tensor tokenIds, KVCache kvCache, int startPos) {
         int[] idShape = tokenIds.getShape();
 
         if (idShape.length != 2) {
@@ -149,39 +161,38 @@ public class TinyGPT extends Module {
         int B = idShape[0];
         int T = idShape[1];
 
-        if (T > maxSeqLen) {
+        if (startPos + T > maxSeqLen) {
             throw new IllegalArgumentException(
-                    "Sequence length " + T + " exceeds maxSeqLen " + maxSeqLen);
+                    "Position " + (startPos + T) + " exceeds maxSeqLen " + maxSeqLen);
         }
 
         // --- 1. Token Embedding: [B, T] → [B, T, embedDim] ---
         Tensor tokEmb = tokenEmbedding.forward(tokenIds);
 
-        // --- 2. Positional Embedding: build position indices [1, T] → [1, T, embedDim]
-        // ---
+        // --- 2. Positional Embedding starting from startPos ---
         float[] posData = new float[T];
         for (int i = 0; i < T; i++) {
-            posData[i] = i;
+            posData[i] = startPos + i;
         }
         Tensor posIds = new Tensor(posData, new int[] { 1, T });
-        Tensor posEmb = positionEmbedding.forward(posIds); // [1, T, embedDim] — broadcasts over B
+        Tensor posEmb = positionEmbedding.forward(posIds); // [1, T, embedDim]
 
         // --- 3. Sum token + position embeddings ---
-        Tensor hidden = tokEmb.add(posEmb); // [B, T, embedDim]
+        Tensor hidden = tokEmb.add(posEmb);
 
-        // --- 4. Causal mask ---
-        Tensor mask = MultiHeadAttention.createCausalMask(T);
+        // --- 4. Causal mask (only needed if evaluating multiple tokens at once) ---
+        Tensor mask = T > 1 ? MultiHeadAttention.createCausalMask(T) : null;
 
-        // --- 5. Transformer Blocks ---
+        // --- 5. Transformer Blocks with Layer KV Caches ---
         for (int i = 0; i < numLayers; i++) {
-            hidden = blocks[i].forward(hidden, mask);
+            KVCache.LayerCache layerCache = (kvCache != null) ? kvCache.getLayer(i) : null;
+            hidden = blocks[i].forwardWithCache(hidden, mask, layerCache);
         }
 
         // --- 6. Final LayerNorm ---
         hidden = finalNorm.forward(hidden);
 
         // --- 7. LM Head projection: [B, T, embedDim] → [B, T, vocabSize] ---
-        // Linear expects 2D input, so reshape, project, then reshape back.
         Tensor hidden2d = hidden.reshape(B * T, embedDim);
         Tensor logits2d = lmHead.forward(hidden2d);
         Tensor logits = logits2d.reshape(B, T, vocabSize);

@@ -57,10 +57,13 @@ public class TransformerBlock extends Module {
         }
         Tensor x = inputs[0];
         Tensor mask = inputs.length > 1 ? inputs[1] : null;
+        return forwardWithCache(x, mask, null);
+    }
 
+    public Tensor forwardWithCache(Tensor x, Tensor mask, KVCache.LayerCache layerCache) {
         // Pre-LN Attention Branch
         Tensor normX = ln1.forward(x);
-        Tensor attnOut = attn.forward(normX, mask);
+        Tensor attnOut = attn.forwardWithCache(normX, mask, layerCache);
         Tensor xAttn = x.add(attnOut);
 
         // Pre-LN Feed-Forward Branch

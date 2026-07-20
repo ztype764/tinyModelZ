@@ -16,11 +16,12 @@ import java.util.List;
 public class DataLoader {
 
     private final TextDataset dataset;
+    private final int[] tokenIds;
     private final int batchSize;
     private final int seqLen;
     private final boolean shuffle;
 
-    private List<Integer> startOffsets;
+    private final List<Integer> startOffsets;
     private int cursor = 0;
 
     /**
@@ -42,9 +43,16 @@ public class DataLoader {
             throw new IllegalArgumentException("Sequence length must be positive");
         }
         this.dataset = dataset;
+        this.tokenIds = dataset.getTokenIds();
         this.batchSize = batchSize;
         this.seqLen = seqLen;
         this.shuffle = shuffle;
+
+        int maxStartOffset = tokenIds.length - seqLen - 1;
+        this.startOffsets = new ArrayList<>(Math.max(0, maxStartOffset + 1));
+        for (int i = 0; i <= maxStartOffset; i++) {
+            this.startOffsets.add(i);
+        }
 
         reset();
     }
@@ -53,14 +61,6 @@ public class DataLoader {
      * Resets the cursor and reshuffles the start offsets if shuffle mode is enabled.
      */
     public void reset() {
-        int[] ids = dataset.getTokenIds();
-        int maxStartOffset = ids.length - seqLen - 1;
-
-        startOffsets = new ArrayList<>();
-        for (int i = 0; i <= maxStartOffset; i++) {
-            startOffsets.add(i);
-        }
-
         if (shuffle) {
             Collections.shuffle(startOffsets);
         }
@@ -88,13 +88,12 @@ public class DataLoader {
 
         float[] xData = new float[batchSize * seqLen];
         float[] yData = new float[batchSize * seqLen];
-        int[] ids = dataset.getTokenIds();
 
         for (int b = 0; b < batchSize; b++) {
             int startIdx = startOffsets.get(cursor + b);
             for (int t = 0; t < seqLen; t++) {
-                xData[b * seqLen + t] = ids[startIdx + t];
-                yData[b * seqLen + t] = ids[startIdx + t + 1];
+                xData[b * seqLen + t] = tokenIds[startIdx + t];
+                yData[b * seqLen + t] = tokenIds[startIdx + t + 1];
             }
         }
 

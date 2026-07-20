@@ -11,6 +11,7 @@ import java.util.Arrays;
  */
 public class FeedForward extends Module {
 
+    private final int embedDim;
     private final Linear cFc;
     private final Linear cProj;
     private final Dropout dropout;
@@ -33,6 +34,7 @@ public class FeedForward extends Module {
      * @param dropoutProb dropout rate
      */
     public FeedForward(int embedDim, int hiddenDim, float dropoutProb) {
+        this.embedDim = embedDim;
         this.cFc = new Linear(embedDim, hiddenDim);
         this.cProj = new Linear(hiddenDim, embedDim);
         this.dropout = new Dropout(dropoutProb);
@@ -63,7 +65,7 @@ public class FeedForward extends Module {
         Tensor projected = cProj.forward(h);
         Tensor result2d = dropout.forward(projected);
 
-        return result2d.reshape(B, T, C);
+        return result2d.reshape(B, T, embedDim);
     }
 
     @Override

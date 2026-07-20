@@ -83,10 +83,6 @@ public class AdamW {
                     float g = grad[i];
                     float w = data[i];
 
-                    if (weightDecay != 0.0f) {
-                        w -= lr * weightDecay * w;
-                    }
-
                     float mVal = beta1 * mState[i] + (1.0f - beta1) * g;
                     mState[i] = mVal;
 
@@ -96,7 +92,10 @@ public class AdamW {
                     float mHat = mVal / biasCorrection1;
                     float vHat = vVal / biasCorrection2;
 
-                    data[i] = w - (lr / ((float) Math.sqrt(vHat) + eps)) * mHat;
+                    float adamStep = (lr / ((float) Math.sqrt(vHat) + eps)) * mHat;
+                    float decayStep = (weightDecay != 0.0f) ? lr * weightDecay * w : 0.0f;
+
+                    data[i] = w - adamStep - decayStep;
                 });
             } else {
                 for (int i = 0; i < size; i++) {
@@ -104,10 +103,6 @@ public class AdamW {
                     float g = grad[idx];
                     float w = data[idx];
 
-                    if (weightDecay != 0.0f) {
-                        w -= lr * weightDecay * w;
-                    }
-
                     float mVal = beta1 * mState[i] + (1.0f - beta1) * g;
                     mState[i] = mVal;
 
@@ -117,7 +112,10 @@ public class AdamW {
                     float mHat = mVal / biasCorrection1;
                     float vHat = vVal / biasCorrection2;
 
-                    data[idx] = w - (lr / ((float) Math.sqrt(vHat) + eps)) * mHat;
+                    float adamStep = (lr / ((float) Math.sqrt(vHat) + eps)) * mHat;
+                    float decayStep = (weightDecay != 0.0f) ? lr * weightDecay * w : 0.0f;
+
+                    data[idx] = w - adamStep - decayStep;
                 }
             }
         }

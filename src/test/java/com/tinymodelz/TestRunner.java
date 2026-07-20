@@ -68,6 +68,7 @@ public class TestRunner {
 
             TestReporter.startSuite("Language Model Training & Optimization");
             com.tinymodelz.train.TrainingTest.runTests();
+            com.tinymodelz.train.TokenizerAndResumeTest.runTests();
             TestReporter.endSuite();
 
             TestReporter.startSuite("Autoregressive Inference & Sampling");

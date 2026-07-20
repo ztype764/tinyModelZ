@@ -1,0 +1,13 @@
+Tier,Device,EmbedDim,Layers,Heads,BatchSize,ContextLen,AvgStepMs,TokensPerSec,GFLOPsPerSec,PeakRamMB,PeakVramMB,GPUUtilPercent,SpeedupVsCPU
+Tier 1 (Tiny),CPU,64,2,2,16,64,738.62,1386,1.004,152.8,N/A,N/A,1.00x
+Tier 1 (Tiny),OpenCL,64,2,2,16,64,711.90,1438,1.042,165.2,0.0,0.0,1.04x
+Tier 1 (Tiny),CUDA,64,2,2,16,64,464.35,2205,1.597,196.1,0.0,0.0,1.59x
+Tier 2 (Small),CPU,128,2,4,16,64,1713.11,598,1.570,290.4,N/A,N/A,1.00x
+Tier 2 (Small),OpenCL,128,2,4,16,64,1401.64,731,1.919,232.9,0.0,0.0,1.22x
+Tier 2 (Small),CUDA,128,2,4,16,64,803.11,1275,3.350,294.4,0.0,0.0,2.13x
+Tier 3 (Medium),CPU,256,4,4,16,64,8062.04,127,2.470,973.9,N/A,N/A,1.00x
+Tier 3 (Medium),OpenCL,256,4,4,16,64,7051.71,145,2.824,1193.1,0.0,0.0,1.14x
+Tier 3 (Medium),CUDA,256,4,4,16,64,3224.38,318,6.177,1040.3,0.0,0.0,2.50x
+Tier 4 (Large),CPU,512,6,8,8,64,22817.06,22,2.569,1806.1,N/A,N/A,1.00x
+Tier 4 (Large),OpenCL,512,6,8,8,64,19179.70,27,3.056,1911.9,0.0,0.0,1.19x
+Tier 4 (Large),CUDA,512,6,8,8,64,7052.98,73,8.310,2138.5,0.0,0.0,3.24x

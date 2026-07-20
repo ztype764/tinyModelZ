@@ -251,6 +251,13 @@ JNIEXPORT jstring JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nGetDeviceName(
     return (*env)->NewStringUTF(env, g_deviceName);
 }
 
+static CUdeviceptr g_bufA = 0;
+static CUdeviceptr g_bufB = 0;
+static CUdeviceptr g_bufC = 0;
+static size_t g_capA = 0;
+static size_t g_capB = 0;
+static size_t g_capC = 0;
+
 JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nMatMul(
         JNIEnv *env, jclass cls,
         jfloatArray a, jfloatArray b, jfloatArray c,
@@ -262,30 +269,52 @@ JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nMatMul(
     jfloat *h_b = (*env)->GetPrimitiveArrayCritical(env, b, NULL);
     jfloat *h_c = (*env)->GetPrimitiveArrayCritical(env, c, NULL);
 
-    size_t sizeA = m * k * sizeof(float);
-    size_t sizeB = k * n * sizeof(float);
-    size_t sizeC = m * n * sizeof(float);
+    size_t sizeA = (size_t)m * k * sizeof(float);
+    size_t sizeB = (size_t)k * n * sizeof(float);
+    size_t sizeC = (size_t)m * n * sizeof(float);
 
-    CUdeviceptr d_a = 0, d_b = 0, d_c = 0;
-    f_cuMemAlloc(&d_a, sizeA);
-    f_cuMemAlloc(&d_b, sizeB);
-    f_cuMemAlloc(&d_c, sizeC);
+    if (!g_bufA || g_capA < sizeA) {
+        if (g_bufA) f_cuMemFree(g_bufA);
+        if (f_cuMemAlloc(&g_bufA, sizeA) != 0) {
+            (*env)->ReleasePrimitiveArrayCritical(env, a, h_a, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, b, h_b, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, c, h_c, JNI_ABORT);
+            return JNI_FALSE;
+        }
+        g_capA = sizeA;
+    }
+    if (!g_bufB || g_capB < sizeB) {
+        if (g_bufB) f_cuMemFree(g_bufB);
+        if (f_cuMemAlloc(&g_bufB, sizeB) != 0) {
+            (*env)->ReleasePrimitiveArrayCritical(env, a, h_a, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, b, h_b, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, c, h_c, JNI_ABORT);
+            return JNI_FALSE;
+        }
+        g_capB = sizeB;
+    }
+    if (!g_bufC || g_capC < sizeC) {
+        if (g_bufC) f_cuMemFree(g_bufC);
+        if (f_cuMemAlloc(&g_bufC, sizeC) != 0) {
+            (*env)->ReleasePrimitiveArrayCritical(env, a, h_a, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, b, h_b, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, c, h_c, JNI_ABORT);
+            return JNI_FALSE;
+        }
+        g_capC = sizeC;
+    }
 
-    f_cuMemcpyHtoD(d_a, h_a, sizeA);
-    f_cuMemcpyHtoD(d_b, h_b, sizeB);
+    f_cuMemcpyHtoD(g_bufA, h_a, sizeA);
+    f_cuMemcpyHtoD(g_bufB, h_b, sizeB);
 
     int gridDimX = (n + 15) / 16;
     int gridDimY = (m + 15) / 16;
-    void* args[] = { &d_a, &d_b, &d_c, &m, &n, &k };
+    void* args[] = { &g_bufA, &g_bufB, &g_bufC, &m, &n, &k };
 
     f_cuLaunchKernel(g_matmulFunc, gridDimX, gridDimY, 1, 16, 16, 1, 0, NULL, args, NULL);
     f_cuCtxSynchronize();
 
-    f_cuMemcpyDtoH(h_c, d_c, sizeC);
-
-    f_cuMemFree(d_a);
-    f_cuMemFree(d_b);
-    f_cuMemFree(d_c);
+    f_cuMemcpyDtoH(h_c, g_bufC, sizeC);
 
     (*env)->ReleasePrimitiveArrayCritical(env, c, h_c, 0);
     (*env)->ReleasePrimitiveArrayCritical(env, b, h_b, JNI_ABORT);
@@ -305,31 +334,53 @@ JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nBatchedMatMul
     jfloat *h_b = (*env)->GetPrimitiveArrayCritical(env, b, NULL);
     jfloat *h_c = (*env)->GetPrimitiveArrayCritical(env, c, NULL);
 
-    size_t sizeA = numBatches * m * k * sizeof(float);
-    size_t sizeB = numBatches * k * n * sizeof(float);
-    size_t sizeC = numBatches * m * n * sizeof(float);
+    size_t sizeA = (size_t)numBatches * m * k * sizeof(float);
+    size_t sizeB = (size_t)numBatches * k * n * sizeof(float);
+    size_t sizeC = (size_t)numBatches * m * n * sizeof(float);
 
-    CUdeviceptr d_a = 0, d_b = 0, d_c = 0;
-    f_cuMemAlloc(&d_a, sizeA);
-    f_cuMemAlloc(&d_b, sizeB);
-    f_cuMemAlloc(&d_c, sizeC);
+    if (!g_bufA || g_capA < sizeA) {
+        if (g_bufA) f_cuMemFree(g_bufA);
+        if (f_cuMemAlloc(&g_bufA, sizeA) != 0) {
+            (*env)->ReleasePrimitiveArrayCritical(env, a, h_a, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, b, h_b, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, c, h_c, JNI_ABORT);
+            return JNI_FALSE;
+        }
+        g_capA = sizeA;
+    }
+    if (!g_bufB || g_capB < sizeB) {
+        if (g_bufB) f_cuMemFree(g_bufB);
+        if (f_cuMemAlloc(&g_bufB, sizeB) != 0) {
+            (*env)->ReleasePrimitiveArrayCritical(env, a, h_a, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, b, h_b, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, c, h_c, JNI_ABORT);
+            return JNI_FALSE;
+        }
+        g_capB = sizeB;
+    }
+    if (!g_bufC || g_capC < sizeC) {
+        if (g_bufC) f_cuMemFree(g_bufC);
+        if (f_cuMemAlloc(&g_bufC, sizeC) != 0) {
+            (*env)->ReleasePrimitiveArrayCritical(env, a, h_a, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, b, h_b, JNI_ABORT);
+            (*env)->ReleasePrimitiveArrayCritical(env, c, h_c, JNI_ABORT);
+            return JNI_FALSE;
+        }
+        g_capC = sizeC;
+    }
 
-    f_cuMemcpyHtoD(d_a, h_a, sizeA);
-    f_cuMemcpyHtoD(d_b, h_b, sizeB);
+    f_cuMemcpyHtoD(g_bufA, h_a, sizeA);
+    f_cuMemcpyHtoD(g_bufB, h_b, sizeB);
 
     int gridDimX = (n + 15) / 16;
     int gridDimY = (m + 15) / 16;
     int gridDimZ = numBatches;
-    void* args[] = { &d_a, &d_b, &d_c, &m, &n, &k };
+    void* args[] = { &g_bufA, &g_bufB, &g_bufC, &m, &n, &k };
 
     f_cuLaunchKernel(g_batchedMatmulFunc, gridDimX, gridDimY, gridDimZ, 16, 16, 1, 0, NULL, args, NULL);
     f_cuCtxSynchronize();
 
-    f_cuMemcpyDtoH(h_c, d_c, sizeC);
-
-    f_cuMemFree(d_a);
-    f_cuMemFree(d_b);
-    f_cuMemFree(d_c);
+    f_cuMemcpyDtoH(h_c, g_bufC, sizeC);
 
     (*env)->ReleasePrimitiveArrayCritical(env, c, h_c, 0);
     (*env)->ReleasePrimitiveArrayCritical(env, b, h_b, JNI_ABORT);

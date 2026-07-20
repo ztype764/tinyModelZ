@@ -54,16 +54,22 @@ public class Embedding extends Module {
         int numElements = indices.size();
         float[] outData = new float[numElements * embeddingDim];
         
+        Tensor contIndices = indices.toContiguous();
+        float[] idxData = contIndices.getData();
+        int idxOffset = contIndices.offset();
+
+        Tensor contWeight = weight.toContiguous();
+        float[] wData = contWeight.getData();
+        int wOffset = contWeight.offset();
+
         // Retrieve embeddings row by row
         for (int i = 0; i < numElements; i++) {
-            int tokenIdx = (int) indices.getValByFlatIndex(i);
+            int tokenIdx = (int) idxData[idxOffset + i];
             if (tokenIdx < 0 || tokenIdx >= numEmbeddings) {
                 throw new IndexOutOfBoundsException("Token ID " + tokenIdx + " is out of bounds for vocab size " + numEmbeddings);
             }
             int outOffset = i * embeddingDim;
-            for (int d = 0; d < embeddingDim; d++) {
-                outData[outOffset + d] = weight.getValByFlatIndex(tokenIdx * embeddingDim + d);
-            }
+            System.arraycopy(wData, wOffset + tokenIdx * embeddingDim, outData, outOffset, embeddingDim);
         }
         
         Tensor result = new Tensor(outData, outShape);

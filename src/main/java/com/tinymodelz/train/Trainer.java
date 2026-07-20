@@ -191,9 +191,18 @@ public class Trainer {
      */
     public void train(DataLoader loader, DataLoader valLoader, int epochs, File checkpointDir, List<String> prompts,
             int generateTokens, int logInterval) {
+        train(loader, valLoader, 1, epochs, checkpointDir, prompts, generateTokens, logInterval);
+    }
+
+    /**
+     * Executes multi-epoch training starting from a specified initial epoch number (supports resuming).
+     */
+    public void train(DataLoader loader, DataLoader valLoader, int startEpoch, int epochs, File checkpointDir, List<String> prompts,
+            int generateTokens, int logInterval) {
         logger.info("==================================================");
-        logger.info(String.format("Starting Full Training: %d Epochs, Batch Size: %d, Context Length: %d",
-                epochs, loader.getBatchSize(), loader.getSeqLen()));
+        logger.info(String.format("Starting Training: Epoch %d to %d, Batch Size: %d, Context Length: %d",
+                startEpoch, epochs, loader.getBatchSize(), loader.getSeqLen()));
+        logger.info("Tokenizer in use: " + tokenizer.getClass().getSimpleName() + " (vocabSize: " + tokenizer.getVocabSize() + ")");
         logger.info("Model Config: " + model.summary());
         logger.info("==================================================");
 
@@ -203,9 +212,10 @@ public class Trainer {
 
         LRScheduler scheduler = new LRScheduler(optimizer, optimizer.getLearningRate(), 1e-5f, warmupSteps,
                 totalTrainingSteps);
+        scheduler.setCurrentStep(optimizer.getStepCount());
         float bestValLoss = Float.MAX_VALUE;
 
-        for (int epoch = 1; epoch <= epochs; epoch++) {
+        for (int epoch = startEpoch; epoch <= epochs; epoch++) {
             profiler.resetEpoch();
             model.train();
             loader.reset();

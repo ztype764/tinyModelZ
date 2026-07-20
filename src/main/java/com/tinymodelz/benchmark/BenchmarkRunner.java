@@ -122,14 +122,13 @@ public class BenchmarkRunner {
             allResults.add(cpuRes);
             allResults.add(openclRes);
 
+            BenchmarkRunResult cudaRes = null;
             if (com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
-                BenchmarkRunResult cudaRes = executeSingleBenchmark(cfg, Device.GPU_CUDA);
+                cudaRes = executeSingleBenchmark(cfg, Device.GPU_CUDA);
                 allResults.add(cudaRes);
-                printPhase1OpBreakdownTable(cfg, cpuRes, openclRes);
-            } else {
-                printPhase1OpBreakdownTable(cfg, cpuRes, openclRes);
             }
 
+            printPhase1OpBreakdownTable(cfg, cpuRes, openclRes);
             printPhase2MemoryReport(cfg, openclRes);
             printPhase3KernelReport(cfg, openclRes);
             printPhase9BottleneckAnalysis(cfg, cpuRes, openclRes);
@@ -317,22 +316,57 @@ public class BenchmarkRunner {
         logger.info("\n==========================================================================================================");
         logger.info("                   PHASE 8 - COMPREHENSIVE BENCHMARK COMPARISON REPORT TABLE");
         logger.info("==========================================================================================================");
-        logger.info(String.format("%-15s | %-6s | %-11s | %-11s | %-11s | %-10s | %-9s | %-9s | %-8s",
+        logger.info(String.format("%-15s | %-10s | %-11s | %-11s | %-11s | %-10s | %-9s | %-9s | %-8s",
                 "Tier Config", "Device", "Avg ms/step", "Tokens/sec", "GFLOPs/sec", "Peak RAM", "Peak VRAM", "GPU Util%", "Speedup"));
         logger.info("----------------------------------------------------------------------------------------------------------");
 
-        for (int i = 0; i < allResults.size(); i += 2) {
-            BenchmarkRunResult cpu = allResults.get(i);
-            BenchmarkRunResult gpu = allResults.get(i + 1);
-            double speedup = cpu.avgStepMs / Math.max(0.001, gpu.avgStepMs);
+        // Map CPU benchmark result per tier for baseline speedup calculation
+        Map<String, BenchmarkRunResult> cpuBaselines = new HashMap<>();
+        for (BenchmarkRunResult r : allResults) {
+            if (r.device == Device.CPU) {
+                cpuBaselines.put(r.config.name, r);
+            }
+        }
 
-            logger.info(String.format("%-15s | %-6s | %-11.2f | %-11.0f | %-11.3f | %-7.1f MB | %-7s | %-9s | %-8s",
-                    cpu.config.name, "CPU", cpu.avgStepMs, cpu.tokensPerSec, cpu.gflops, cpu.peakRamMb, "N/A", "N/A", "1.00x"));
-            logger.info(String.format("%-15s | %-6s | %-11.2f | %-11.0f | %-11.3f | %-7.1f MB | %-5.1f MB | %-8.1f%% | %-7.2fx",
-                    gpu.config.name, "GPU", gpu.avgStepMs, gpu.tokensPerSec, gpu.gflops, gpu.peakRamMb, gpu.peakVramMb, gpu.gpuUtilizationPercent, speedup));
-            logger.info("----------------------------------------------------------------------------------------------------------");
+        StringBuilder csvBuilder = new StringBuilder();
+        csvBuilder.append("Tier,Device,EmbedDim,Layers,Heads,BatchSize,ContextLen,AvgStepMs,TokensPerSec,GFLOPsPerSec,PeakRamMB,PeakVramMB,GPUUtilPercent,SpeedupVsCPU\n");
+
+        for (BenchmarkRunResult r : allResults) {
+            BenchmarkRunResult cpuBase = cpuBaselines.get(r.config.name);
+            double speedup = (cpuBase != null && cpuBase.avgStepMs > 0) ? (cpuBase.avgStepMs / Math.max(0.001, r.avgStepMs)) : 1.0;
+
+            String devName = "CPU";
+            if (r.device == Device.GPU_OPENCL) devName = "OpenCL";
+            else if (r.device == Device.GPU_CUDA) devName = "CUDA";
+            else if (r.device == Device.GPU) devName = "GPU";
+
+            String vramStr = (r.device == Device.CPU) ? "N/A" : String.format("%.1f MB", r.peakVramMb);
+            String utilStr = (r.device == Device.CPU) ? "N/A" : String.format("%.1f%%", r.gpuUtilizationPercent);
+
+            logger.info(String.format("%-15s | %-10s | %-11.2f | %-11.0f | %-11.3f | %-7.1f MB | %-9s | %-9s | %-7.2fx",
+                    r.config.name, devName, r.avgStepMs, r.tokensPerSec, r.gflops, r.peakRamMb, vramStr, utilStr, speedup));
+
+            csvBuilder.append(String.format("%s,%s,%d,%d,%d,%d,%d,%.2f,%.0f,%.3f,%.1f,%s,%s,%.2fx\n",
+                    r.config.name, devName, r.config.embedDim, r.config.numLayers, r.config.numHeads,
+                    r.config.batchSize, r.config.seqLen, r.avgStepMs, r.tokensPerSec, r.gflops, r.peakRamMb,
+                    (r.device == Device.CPU ? "N/A" : String.format("%.1f", r.peakVramMb)),
+                    (r.device == Device.CPU ? "N/A" : String.format("%.1f", r.gpuUtilizationPercent)),
+                    speedup));
         }
         logger.info("==========================================================================================================\n");
+
+        logger.info("\n==========================================================================================================");
+        logger.info("                                  CSV FORMATTED BENCHMARK OUTPUT");
+        logger.info("==========================================================================================================");
+        logger.info("\n" + csvBuilder.toString());
+        logger.info("==========================================================================================================\n");
+
+        try {
+            java.nio.file.Files.writeString(java.nio.file.Path.of("benchmark_results.csv"), csvBuilder.toString());
+            logger.info("Benchmark results successfully exported to CSV file: benchmark_results.csv");
+        } catch (Exception e) {
+            logger.warn("Failed to export benchmark_results.csv: {}", e.getMessage());
+        }
     }
 
     private static void printPhase9BottleneckAnalysis(ScalingConfig cfg, BenchmarkRunResult cpu, BenchmarkRunResult gpu) {

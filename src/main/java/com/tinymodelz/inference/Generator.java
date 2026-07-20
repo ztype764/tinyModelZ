@@ -75,54 +75,95 @@ public class Generator {
 
         List<Integer> tokenIds = new ArrayList<>(tokenizer.encode(prompt));
 
+        if (model instanceof com.tinymodelz.nn.TinyGPT) {
+            com.tinymodelz.nn.TinyGPT gpt = (com.tinymodelz.nn.TinyGPT) model;
+            com.tinymodelz.nn.KVCache kvCache = new com.tinymodelz.nn.KVCache(gpt.getNumLayers());
+
+            // Step 1: Forward pass prompt tokens all at once
+            float[] promptData = new float[tokenIds.size()];
+            for (int i = 0; i < tokenIds.size(); i++) {
+                promptData[i] = tokenIds.get(i);
+            }
+            Tensor promptTensor = new Tensor(promptData, new int[]{1, tokenIds.size()});
+            Tensor logits = gpt.forwardWithCache(promptTensor, kvCache, 0);
+
+            for (int step = 0; step < maxNewTokens; step++) {
+                int[] logitsShape = logits.getShape();
+                int vocabSize = logitsShape[2];
+                int lastTokenOffset = (logitsShape[1] - 1) * vocabSize;
+
+                float[] lastLogits = new float[vocabSize];
+                Tensor contLogits = logits.toContiguous();
+                System.arraycopy(contLogits.getData(), contLogits.offset() + lastTokenOffset, lastLogits, 0, vocabSize);
+
+                applyRepetitionPenalty(lastLogits, tokenIds, 1.15f);
+
+                int nextTokenId = sample(lastLogits, temperature, topK, topP);
+                tokenIds.add(nextTokenId);
+
+                if (eosId != null && nextTokenId == eosId) {
+                    break;
+                }
+
+                // Step 2: Forward pass ONLY the single new token with cached K/V history!
+                int currentPos = tokenIds.size() - 1;
+                if (currentPos >= seqLen) {
+                    break; // Max sequence length reached
+                }
+                Tensor nextTokenTensor = new Tensor(new float[]{nextTokenId}, new int[]{1, 1});
+                logits = gpt.forwardWithCache(nextTokenTensor, kvCache, currentPos);
+            }
+
+            return tokenizer.decode(tokenIds);
+        }
+
+        // Fallback without KV cache
         for (int step = 0; step < maxNewTokens; step++) {
-            // Cut sequence to context window size seqLen
             int startIdx = Math.max(0, tokenIds.size() - seqLen);
             List<Integer> context = tokenIds.subList(startIdx, tokenIds.size());
 
-            // Prepare input tensor of shape [1, context.size()]
             float[] inputData = new float[context.size()];
             for (int i = 0; i < context.size(); i++) {
                 inputData[i] = context.get(i);
             }
             Tensor x = new Tensor(inputData, new int[] { 1, context.size() });
 
-            // Forward pass: returns logits of shape [1, contextSize, vocabSize]
             Tensor logits = model.forward(x);
             int[] logitsShape = logits.getShape();
             int vocabSize = logitsShape[2];
 
-            // Get last token logits of shape [vocabSize]
             float[] lastLogits = new float[vocabSize];
             int lastTokenOffset = (context.size() - 1) * vocabSize;
 
             Tensor contLogits = logits.toContiguous();
             System.arraycopy(contLogits.getData(), contLogits.offset() + lastTokenOffset, lastLogits, 0, vocabSize);
 
-            // Apply Repetition Penalty (Phase 6)
-            float repetitionPenalty = 1.15f; // Default 1.15 repetition penalty factor
-            if (repetitionPenalty > 1.0f) {
-                for (int previousId : tokenIds) {
-                    if (previousId >= 0 && previousId < vocabSize) {
-                        if (lastLogits[previousId] < 0) {
-                            lastLogits[previousId] *= repetitionPenalty;
-                        } else {
-                            lastLogits[previousId] /= repetitionPenalty;
-                        }
-                    }
-                }
-            }
+            applyRepetitionPenalty(lastLogits, tokenIds, 1.15f);
 
-            // Sample next token ID
             int nextTokenId = sample(lastLogits, temperature, topK, topP);
             tokenIds.add(nextTokenId);
 
             if (eosId != null && nextTokenId == eosId) {
-                break; // Stop generation on EOS
+                break;
             }
         }
 
         return tokenizer.decode(tokenIds);
+    }
+
+    private void applyRepetitionPenalty(float[] lastLogits, List<Integer> tokenIds, float repetitionPenalty) {
+        if (repetitionPenalty > 1.0f) {
+            int vocabSize = lastLogits.length;
+            for (int previousId : tokenIds) {
+                if (previousId >= 0 && previousId < vocabSize) {
+                    if (lastLogits[previousId] < 0) {
+                        lastLogits[previousId] *= repetitionPenalty;
+                    } else {
+                        lastLogits[previousId] /= repetitionPenalty;
+                    }
+                }
+            }
+        }
     }
 
     /**

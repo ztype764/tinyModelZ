@@ -54,16 +54,6 @@ public class MultiHeadAttention extends Module {
         for (Tensor p : outProj.getParameters()) registerParameter(p);
     }
 
-    public static class KVCache {
-        public Tensor keyCache;
-        public Tensor valueCache;
-
-        public void reset() {
-            keyCache = null;
-            valueCache = null;
-        }
-    }
-
     @Override
     public Tensor forward(Tensor... inputs) {
         if (inputs.length == 0) {
@@ -71,7 +61,10 @@ public class MultiHeadAttention extends Module {
         }
         Tensor x = inputs[0];
         Tensor mask = inputs.length > 1 ? inputs[1] : null;
+        return forwardWithCache(x, mask, null);
+    }
 
+    public Tensor forwardWithCache(Tensor x, Tensor mask, KVCache.LayerCache layerCache) {
         int[] xShape = x.getShape();
         if (xShape.length != 3) {
             throw new IllegalArgumentException("Input tensor must be 3D [B, T, C]. Got: " + Arrays.toString(xShape));
@@ -100,15 +93,25 @@ public class MultiHeadAttention extends Module {
         Tensor kSplit = k.reshape(B, T, numHeads, headDim).transpose(1, 2);
         Tensor vSplit = v.reshape(B, T, numHeads, headDim).transpose(1, 2);
 
+        // Cache accumulation along sequence length dimension (dim 2)
+        if (layerCache != null) {
+            if (layerCache.keyCache != null && layerCache.valueCache != null) {
+                kSplit = Tensor.cat(java.util.List.of(layerCache.keyCache, kSplit), 2);
+                vSplit = Tensor.cat(java.util.List.of(layerCache.valueCache, vSplit), 2);
+            }
+            layerCache.keyCache = kSplit;
+            layerCache.valueCache = vSplit;
+        }
+
         // Compute scores = Q * K^T / sqrt(D)
-        Tensor kTransposed = kSplit.transpose(2, 3); // [B, H, D, T]
-        Tensor scores = qSplit.matmul(kTransposed); // [B, H, T, T]
+        Tensor kTransposed = kSplit.transpose(2, 3); // [B, H, D, total_cached_T]
+        Tensor scores = qSplit.matmul(kTransposed); // [B, H, T, total_cached_T]
 
         float scale = 1.0f / (float) Math.sqrt(headDim);
         scores = scores.multiply(scale);
 
-        // Apply masking if present
-        if (mask != null) {
+        // Apply masking if present (only when processing multiple tokens with unpopulated cache)
+        if (mask != null && T > 1 && (layerCache == null || layerCache.keyCache == null)) {
             scores = scores.maskedFill(mask, -1e9f);
         }
 

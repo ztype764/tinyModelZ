@@ -55,6 +55,8 @@ static fn_clEnqueueNDRangeKernel p_clEnqueueNDRangeKernel;
 static fn_clFinish p_clFinish;
 static fn_clReleaseMemObject p_clReleaseMemObject;
 
+static cl_kernel kernel_batched_matmul = NULL;
+
 // Tiled Local Memory OpenCL Matrix Multiplication Kernel (Phase 2 Performance Upgrade)
 const char* gpu_source = 
 "#define TILE_SIZE 16\n"
@@ -67,6 +69,21 @@ const char* gpu_source =
 "            sum += A[row * K + k] * B[k * N + col];\n"
 "        }\n"
 "        C[row * N + col] = sum;\n"
+"    }\n"
+"}\n"
+"__kernel void batched_matmul(__global const float* A, __global const float* B, __global float* C, int M, int N, int K) {\n"
+"    int row = get_global_id(0);\n"
+"    int col = get_global_id(1);\n"
+"    int batch = get_global_id(2);\n"
+"    int offA = batch * M * K;\n"
+"    int offB = batch * K * N;\n"
+"    int offC = batch * M * N;\n"
+"    float sum = 0.0f;\n"
+"    if (row < M && col < N) {\n"
+"        for (int k = 0; k < K; k++) {\n"
+"            sum += A[offA + row * K + k] * B[offB + k * N + col];\n"
+"        }\n"
+"        C[offC + row * N + col] = sum;\n"
 "    }\n"
 "}\n"
 "__kernel void vec_add(__global const float* A, __global const float* B, __global float* C, int size) {\n"
@@ -127,9 +144,10 @@ static int internal_gpu_init() {
     if (err != 0) return 0;
 
     kernel_matmul = p_clCreateKernel(program, "matmul", &err);
+    kernel_batched_matmul = p_clCreateKernel(program, "batched_matmul", &err);
     kernel_add = p_clCreateKernel(program, "vec_add", &err);
 
-    if (err != 0 || !kernel_matmul) return 0;
+    if (err != 0 || !kernel_matmul || !kernel_batched_matmul) return 0;
 
     gpu_initialized = 1;
     return 1;
@@ -236,33 +254,17 @@ JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nBatchedMatMul(
     p_clEnqueueWriteBuffer(queue, bufA, 1, 0, totalBytesA, ptrA, 0, NULL, NULL);
     p_clEnqueueWriteBuffer(queue, bufB, 1, 0, totalBytesB, ptrB, 0, NULL, NULL);
 
-    for (int batch = 0; batch < numBatches; batch++) {
-        size_t offA = batch * batchBytesA;
-        size_t offB = batch * batchBytesB;
-        size_t offC = batch * batchBytesC;
+    p_clSetKernelArg(kernel_batched_matmul, 0, sizeof(cl_mem), &bufA);
+    p_clSetKernelArg(kernel_batched_matmul, 1, sizeof(cl_mem), &bufB);
+    p_clSetKernelArg(kernel_batched_matmul, 2, sizeof(cl_mem), &bufC);
+    p_clSetKernelArg(kernel_batched_matmul, 3, sizeof(int), &m);
+    p_clSetKernelArg(kernel_batched_matmul, 4, sizeof(int), &n);
+    p_clSetKernelArg(kernel_batched_matmul, 5, sizeof(int), &k);
 
-        cl_mem subA = p_clCreateBuffer(context, 1, batchBytesA, NULL, &err);
-        cl_mem subB = p_clCreateBuffer(context, 1, batchBytesB, NULL, &err);
-        cl_mem subC = p_clCreateBuffer(context, 2, batchBytesC, NULL, &err);
+    size_t global[3] = { (size_t)m, (size_t)n, (size_t)numBatches };
+    p_clEnqueueNDRangeKernel(queue, kernel_batched_matmul, 3, NULL, global, NULL, 0, NULL, NULL);
 
-        p_clEnqueueWriteBuffer(queue, subA, 1, 0, batchBytesA, ptrA + (batch * m * k), 0, NULL, NULL);
-        p_clEnqueueWriteBuffer(queue, subB, 1, 0, batchBytesB, ptrB + (batch * k * n), 0, NULL, NULL);
-
-        p_clSetKernelArg(kernel_matmul, 0, sizeof(cl_mem), &subA);
-        p_clSetKernelArg(kernel_matmul, 1, sizeof(cl_mem), &subB);
-        p_clSetKernelArg(kernel_matmul, 2, sizeof(cl_mem), &subC);
-        p_clSetKernelArg(kernel_matmul, 3, sizeof(int), &m);
-        p_clSetKernelArg(kernel_matmul, 4, sizeof(int), &n);
-        p_clSetKernelArg(kernel_matmul, 5, sizeof(int), &k);
-
-        size_t global[2] = { (size_t)m, (size_t)n };
-        p_clEnqueueNDRangeKernel(queue, kernel_matmul, 2, NULL, global, NULL, 0, NULL, NULL);
-        p_clEnqueueReadBuffer(queue, subC, 1, 0, batchBytesC, ptrC + (batch * m * n), 0, NULL, NULL);
-
-        p_clReleaseMemObject(subA);
-        p_clReleaseMemObject(subB);
-        p_clReleaseMemObject(subC);
-    }
+    p_clEnqueueReadBuffer(queue, bufC, 1, 0, totalBytesC, ptrC, 0, NULL, NULL);
     p_clFinish(queue);
 
     (*env)->ReleaseFloatArrayElements(env, a, ptrA, JNI_ABORT);
