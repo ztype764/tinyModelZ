@@ -161,6 +161,7 @@ public class PromptRunner {
             String input = scanner.nextLine();
             if (input == null || "exit".equalsIgnoreCase(input.trim()) || "quit".equalsIgnoreCase(input.trim())) {
                 System.out.println("Exiting PromptRunner. Goodbye!");
+                scanner.close();
                 break;
             }
 

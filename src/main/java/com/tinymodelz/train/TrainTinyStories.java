@@ -89,10 +89,10 @@ public class TrainTinyStories {
 
         // --- Step 5: TinyGPT Model ---
         logger.info("4. Instantiating TinyGPT model architecture...");
-        int embedDim = 64;
-        int numLayers = 2;
-        int numHeads = 2;
-        int feedForwardDim = 256;
+        int embedDim = 128;
+        int numLayers = 4;
+        int numHeads = 4;
+        int feedForwardDim = 512;
         float dropoutProb = 0.1f;
         float learningRate = 3e-4f;
 
@@ -111,7 +111,13 @@ public class TrainTinyStories {
         // --- Step 7: Full Training ---
         logger.info("6. Starting full training loop for {} epochs...", epochs);
         File checkpointDir = new File("checkpoints/tinystories");
-        trainer.train(loader, epochs, checkpointDir, "Once upon a time", 50, 100);
+        List<String> evalPrompts = List.of(
+            "Once upon a time",
+            "One day, a little dog",
+            "The cat saw a",
+            "Lily went to the park"
+        );
+        trainer.train(loader, epochs, checkpointDir, evalPrompts, 50, 100);
 
         logger.info("==================================================");
         logger.info("TinyGPT Training Pipeline Completed Successfully!");

@@ -1,8 +1,5 @@
 package com.tinymodelz.math;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.Arrays;
 
 /**
@@ -35,8 +32,6 @@ import java.util.Arrays;
  * </ul>
  */
 public class Matrix {
-
-    private static final Logger logger = LoggerFactory.getLogger(Matrix.class);
 
     private final float[][] data;
     private final int rows;

@@ -31,8 +31,8 @@ jobs:
       - name: Compile Native GPU OpenCL Library
         run: |
           mkdir -p src/main/resources/native
-          gcc -shared -fPIC -O3 -I src/main/c src/main/c/gpu_engine_jni.c -ldl -lOpenCL -o src/main/resources/native/libtinymodelz_gpu.so || \
-          gcc -shared -fPIC -O3 -I src/main/c src/main/c/gpu_engine_jni.c -ldl -o src/main/resources/native/libtinymodelz_gpu.so
+          gcc -shared -fPIC -O3 -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -I src/main/c src/main/c/gpu_engine_jni.c -ldl -lOpenCL -o src/main/resources/native/libtinymodelz_gpu.so || \
+          gcc -shared -fPIC -O3 -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -I src/main/c src/main/c/gpu_engine_jni.c -ldl -o src/main/resources/native/libtinymodelz_gpu.so
 
       - name: Run Test Suite
         run: |

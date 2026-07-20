@@ -98,7 +98,7 @@ public class Tensor {
     }
 
     // Helper constructor for contiguous views sharing data
-    private Tensor(float[] data, int[] shape, int[] strides) {
+    public Tensor(float[] data, int[] shape, int[] strides) {
         this(data, shape, strides, 0);
     }
 
@@ -140,6 +140,14 @@ public class Tensor {
 
     public boolean requiresGrad() {
         return requiresGrad;
+    }
+
+    public String getOpName() {
+        return opName;
+    }
+
+    public List<Tensor> getCreators() {
+        return creators;
     }
 
     public void setRequiresGrad(boolean requiresGrad) {
@@ -815,11 +823,20 @@ public class Tensor {
 
     public Tensor gelu() {
         float[] outData = new float[size];
-        for (int i = 0; i < size; i++) {
-            float val = getValByFlatIndex(i);
-            double v = val + 0.044715 * val * val * val;
-            double u = 0.7978845608 * v;
-            outData[i] = (float) (0.5 * val * (1.0 + Math.tanh(u)));
+        if (isContiguous() && offset == 0) {
+            java.util.stream.IntStream.range(0, size).parallel().forEach(i -> {
+                float val = data[i];
+                double v = val + 0.044715 * val * val * val;
+                double u = 0.7978845608 * v;
+                outData[i] = (float) (0.5 * val * (1.0 + Math.tanh(u)));
+            });
+        } else {
+            for (int i = 0; i < size; i++) {
+                float val = getValByFlatIndex(i);
+                double v = val + 0.044715 * val * val * val;
+                double u = 0.7978845608 * v;
+                outData[i] = (float) (0.5 * val * (1.0 + Math.tanh(u)));
+            }
         }
         Tensor result = new Tensor(outData, shape);
         if (this.requiresGrad) {
@@ -830,15 +847,27 @@ public class Tensor {
                 if (this.grad == null) {
                     this.grad = new float[this.data.length];
                 }
-                for (int i = 0; i < size; i++) {
-                    float val = getValByFlatIndex(i);
-                    double v = val + 0.044715 * val * val * val;
-                    double u = 0.7978845608 * v;
-                    double tanhVal = Math.tanh(u);
-                    double sech2 = 1.0 - tanhVal * tanhVal;
-                    double dGelu = 0.5 * (1.0 + tanhVal) + 0.5 * val * sech2 * 0.7978845608 * (1.0 + 0.134145 * val * val);
-                    int offsetIdx = getContiguousToPhysicalOffset(i);
-                    this.grad[offsetIdx] += gradOutput[i] * dGelu;
+                if (isContiguous() && offset == 0) {
+                    java.util.stream.IntStream.range(0, size).parallel().forEach(i -> {
+                        float val = data[i];
+                        double v = val + 0.044715 * val * val * val;
+                        double u = 0.7978845608 * v;
+                        double tanhVal = Math.tanh(u);
+                        double sech2 = 1.0 - tanhVal * tanhVal;
+                        double dGelu = 0.5 * (1.0 + tanhVal) + 0.5 * val * sech2 * 0.7978845608 * (1.0 + 0.134145 * val * val);
+                        this.grad[i] += gradOutput[i] * (float) dGelu;
+                    });
+                } else {
+                    for (int i = 0; i < size; i++) {
+                        float val = getValByFlatIndex(i);
+                        double v = val + 0.044715 * val * val * val;
+                        double u = 0.7978845608 * v;
+                        double tanhVal = Math.tanh(u);
+                        double sech2 = 1.0 - tanhVal * tanhVal;
+                        double dGelu = 0.5 * (1.0 + tanhVal) + 0.5 * val * sech2 * 0.7978845608 * (1.0 + 0.134145 * val * val);
+                        int offsetIdx = getContiguousToPhysicalOffset(i);
+                        this.grad[offsetIdx] += gradOutput[i] * (float) dGelu;
+                    }
                 }
             };
         }

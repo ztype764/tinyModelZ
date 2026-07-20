@@ -189,7 +189,7 @@ public class Trainer {
      * rate scheduling,
      * validation evaluation, and best checkpoint retention.
      */
-    public void train(DataLoader loader, DataLoader valLoader, int epochs, File checkpointDir, String prompt,
+    public void train(DataLoader loader, DataLoader valLoader, int epochs, File checkpointDir, List<String> prompts,
             int generateTokens, int logInterval) {
         logger.info("==================================================");
         logger.info(String.format("Starting Full Training: %d Epochs, Batch Size: %d, Context Length: %d",
@@ -308,25 +308,47 @@ public class Trainer {
                 profiler.addCheckpointTime(System.nanoTime() - tChkStart);
             }
 
-            // --- Autoregressive Text Generation Sample ---
-            if (prompt != null && generateTokens > 0) {
+            // --- Autoregressive Text Generation Samples ---
+            if (prompts != null && !prompts.isEmpty() && generateTokens > 0) {
                 int eosCandidate = tokenizer.tokenToId("<|endoftext|>");
                 Integer eosId = (eosCandidate == tokenizer.tokenToId("[UNK]")) ? null : eosCandidate;
 
-                String sampleOutput = generator.generate(
-                        model, tokenizer, prompt, generateTokens, 0.8f, 40, 0.9f, model.getMaxSeqLen(), eosId);
-                logger.info("  Generated Sample (prompt='{}'):\n\"{}\"", prompt, sampleOutput.trim());
+                logger.info("  --- Post-Epoch {} Text Generation Samples ---", epoch);
+                for (String p : prompts) {
+                    if (p == null || p.isBlank()) continue;
+                    String sampleOutput = generator.generate(
+                            model, tokenizer, p, generateTokens, 0.8f, 40, 0.9f, model.getMaxSeqLen(), eosId);
+                    logger.info("  [Prompt: '{}'] -> \"{}\"", p, sampleOutput.trim());
+                }
             }
             logger.info("==================================================");
         }
     }
 
     /**
-     * Legacy single-loader entry point for backwards compatibility.
+     * Overloaded training method taking a single prompt for backwards compatibility.
+     */
+    public void train(DataLoader loader, DataLoader valLoader, int epochs, File checkpointDir, String singlePrompt,
+            int generateTokens, int logInterval) {
+        List<String> prompts = (singlePrompt != null) ? List.of(singlePrompt) : List.of();
+        this.train(loader, valLoader, epochs, checkpointDir, prompts, generateTokens, logInterval);
+    }
+
+    /**
+     * Legacy single-loader entry point with list of prompts.
+     */
+    public void train(DataLoader loader, int epochs, File checkpointDir, List<String> prompts, int generateTokens,
+            int logInterval) {
+        train(loader, null, epochs, checkpointDir, prompts, generateTokens, logInterval);
+    }
+
+    /**
+     * Legacy single-loader entry point with single prompt for backwards compatibility.
      */
     public void train(DataLoader loader, int epochs, File checkpointDir, String prompt, int generateTokens,
             int logInterval) {
-        train(loader, null, epochs, checkpointDir, prompt, generateTokens, logInterval);
+        List<String> prompts = (prompt != null) ? List.of(prompt) : List.of();
+        train(loader, null, epochs, checkpointDir, prompts, generateTokens, logInterval);
     }
 
     private RuntimeException idleDatasetException() {

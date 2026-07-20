@@ -5,7 +5,6 @@ import com.tinymodelz.nn.Module;
 import com.tinymodelz.tokenizer.Tokenizer;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
@@ -13,13 +12,16 @@ import java.util.Random;
 /**
  * <h3>Generator</h3>
  * 
- * <p>Handles autoregressive text generation using a trained language model.</p>
- * <p>Implements decoding strategies:
+ * <p>
+ * Handles autoregressive text generation using a trained language model.
+ * </p>
+ * <p>
+ * Implements decoding strategies:
  * <ul>
- *   <li>Greedy Decoding (argmax)</li>
- *   <li>Temperature Scaling</li>
- *   <li>Top-K Filtering</li>
- *   <li>Top-P (Nucleus) Filtering</li>
+ * <li>Greedy Decoding (argmax)</li>
+ * <li>Temperature Scaling</li>
+ * <li>Top-K Filtering</li>
+ * <li>Top-P (Nucleus) Filtering</li>
  * </ul>
  * </p>
  */
@@ -46,15 +48,16 @@ public class Generator {
     /**
      * Autoregressively generates text starting from a prompt.
      * 
-     * @param model the language model Module
-     * @param tokenizer the tokenizer
-     * @param prompt the starting prompt text
+     * @param model        the language model Module
+     * @param tokenizer    the tokenizer
+     * @param prompt       the starting prompt text
      * @param maxNewTokens number of new tokens to generate
-     * @param temperature temperature scaling factor (<= 0.0f for greedy argmax)
-     * @param topK keep only top-K logits (<= 0 for disabled)
-     * @param topP nucleus top-P threshold (<= 0.0f or >= 1.0f for disabled)
-     * @param seqLen context length window of the model (max tokens allowed in model input)
-     * @param eosId optional End-Of-Sequence token ID to stop early
+     * @param temperature  temperature scaling factor (<= 0.0f for greedy argmax)
+     * @param topK         keep only top-K logits (<= 0 for disabled)
+     * @param topP         nucleus top-P threshold (<= 0.0f or >= 1.0f for disabled)
+     * @param seqLen       context length window of the model (max tokens allowed in
+     *                     model input)
+     * @param eosId        optional End-Of-Sequence token ID to stop early
      * @return the generated text (including the prompt)
      */
     public String generate(
@@ -71,7 +74,6 @@ public class Generator {
         model.eval(); // Set model to evaluation mode
 
         List<Integer> tokenIds = new ArrayList<>(tokenizer.encode(prompt));
-        int promptLength = tokenIds.size();
 
         for (int step = 0; step < maxNewTokens; step++) {
             // Cut sequence to context window size seqLen
@@ -83,7 +85,7 @@ public class Generator {
             for (int i = 0; i < context.size(); i++) {
                 inputData[i] = context.get(i);
             }
-            Tensor x = new Tensor(inputData, new int[]{1, context.size()});
+            Tensor x = new Tensor(inputData, new int[] { 1, context.size() });
 
             // Forward pass: returns logits of shape [1, contextSize, vocabSize]
             Tensor logits = model.forward(x);
@@ -93,7 +95,7 @@ public class Generator {
             // Get last token logits of shape [vocabSize]
             float[] lastLogits = new float[vocabSize];
             int lastTokenOffset = (context.size() - 1) * vocabSize;
-            
+
             Tensor contLogits = logits.toContiguous();
             System.arraycopy(contLogits.getData(), contLogits.offset() + lastTokenOffset, lastLogits, 0, vocabSize);
 
@@ -124,7 +126,8 @@ public class Generator {
     }
 
     /**
-     * Samples a token ID from a logits distribution using temperature, top-K, and top-P filters.
+     * Samples a token ID from a logits distribution using temperature, top-K, and
+     * top-P filters.
      */
     public int sample(float[] logits, float temperature, int topK, float topP) {
         int vocabSize = logits.length;
@@ -186,7 +189,8 @@ public class Generator {
             float cumSum = 0.0f;
             boolean cutoffReached = false;
             for (LogitEntry entry : entries) {
-                if (entry.val == -Float.MAX_VALUE) continue;
+                if (entry.val == -Float.MAX_VALUE)
+                    continue;
 
                 if (cutoffReached) {
                     entry.val = -Float.MAX_VALUE;

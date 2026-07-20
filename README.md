@@ -145,32 +145,123 @@ Open **`http://localhost:8080`** in your web browser to access the visual **Mode
 
 ---
 
-## 🚀 How to Build and Run Tests
+## 🛠️ Prerequisites & System Setup
 
-You can build the project and run the complete test suite using the provided `build.sh` script:
+### 1. Requirements
+* **Java Development Kit (JDK)**: JDK 21 or GraalVM JDK 21+
+* **Build System**: Apache Maven 3.9+
+* **Native Compiler (Optional for GPU Acceleration)**: `gcc` with OpenCL headers (`libOpenCL.so` / `OpenCL.dll`)
 
+### 2. Environment Setup
+Set your `JAVA_HOME` environment variable to point to your installed JDK 21 or local GraalVM path:
 ```bash
-# Compile and run full test suite (including GPU acceleration checks)
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java -Dexec.mainClass="com.tinymodelz.TestRunner" -Dexec.classpathScope="test"
-
-# Run TinyGPT training pipeline on GPU (NVIDIA GeForce 940MX via OpenCL)
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" -Dexec.args="TinyStories-valid.txt 5 16 64 gpu"
-
-# Run TinyGPT training pipeline on CPU
-JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" -Dexec.args="TinyStories-valid.txt 5 16 64 cpu"
+# Set JDK 21 / GraalVM path
+export JAVA_HOME=/path/to/jdk-21
+export PATH=$JAVA_HOME/bin:$PATH
 ```
 
+### 3. Compiling the Native OpenCL GPU Engine
+If modifying native C acceleration code (`src/main/c/gpu_engine_jni.c`), compile the JNI dynamic library manually:
 ```bash
-bash build.sh
+mkdir -p src/main/resources/native
+gcc -shared -fPIC -O3 -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -I src/main/c src/main/c/gpu_engine_jni.c -ldl -lOpenCL -o src/main/resources/native/libtinymodelz_gpu.so
 ```
 
-The script will compile all source and test files using Maven, download dependencies, execute all unit and integration test suites, and write an HTML report dashboard at:
-`test_report.html`
+---
+
+## 🚀 Commands & Detailed Usage Guide
+
+### 🧪 1. Running the Test Suite
+Run all unit and end-to-end integration tests (Tokenizer, Autograd, Layers, Checkpoint reload, and OpenCL GPU precision checks):
+```bash
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java \
+  -Dexec.mainClass="com.tinymodelz.TestRunner" \
+  -Dexec.classpathScope="test"
+```
+* **HTML Dashboard Report**: After completion, a visual test report dashboard is created at: `test_report.html`.
+
+---
+
+### 📊 2. Running CPU vs GPU Speed Benchmarks (`BenchmarkRunner`)
+Run the 10-phase automated CPU vs GPU performance benchmark suite:
+```bash
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn test-compile exec:java \
+  -Dexec.mainClass="com.tinymodelz.benchmark.BenchmarkRunner" \
+  -Dexec.classpathScope="test" \
+  -Dexec.args="16 64 128 2 2"
+```
+
+---
+
+### 🏋️ 3. Training TinyGPT Models (`TrainTinyStories`)
+Train the TinyGPT transformer architecture on the `TinyStories` dataset:
+```bash
+# Run Training on GPU (NVIDIA OpenCL Engine)
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
+  -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" \
+  -Dexec.args="TinyStories-valid-reduced.txt 5 16 64 gpu"
+
+# Run Training on CPU (All CPU Cores / Multi-threaded)
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
+  -Dexec.mainClass="com.tinymodelz.train.TrainTinyStories" \
+  -Dexec.args="TinyStories-valid-reduced.txt 5 16 64 cpu"
+```
+
+---
+
+### 🤖 4. Sending Prompts to the Model (CLI & Web UI)
+
+#### CLI Prompt Generator (`PromptRunner`)
+```bash
+# Interactive REPL mode:
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
+  -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" \
+  -Dexec.args="--checkpoint checkpoints/tinystories/best_checkpoint"
+
+# Single-prompt non-interactive mode:
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
+  -Dexec.mainClass="com.tinymodelz.inference.PromptRunner" \
+  -Dexec.args="--prompt 'Once upon a time, a small dog' --max-tokens 50 --device gpu"
+```
+
+#### Spring Boot REST API Endpoint (`/api/generate`)
+Start the REST API server:
+```bash
+JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn spring-boot:run
+```
+Send inference HTTP requests via `curl`:
+```bash
+curl -X POST http://localhost:8080/api/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Once upon a time, a little girl",
+    "maxNewTokens": 40,
+    "temperature": 0.7,
+    "topK": 40,
+    "topP": 0.9
+  }'
+```
+
+---
+
+## 🔍 Flag & Argument Explanations
+
+| Flag / Parameter | Purpose & Description |
+| :--- | :--- |
+| **`JAVA_HOME=tools/graalvm`** | Specifies the exact JDK 21 / GraalVM distribution path to use for building and running. |
+| **`-Dexec.mainClass="..."`** | Passes the target main Java class entry point to Maven's `exec-maven-plugin`. |
+| **`-Dexec.classpathScope="test"`** | Configures Maven execution classpath to include test scope libraries (JUnit, test utility classes). |
+| **`-Dexec.args="..."`** | Forwards string command-line arguments directly to Java's `public static void main(String[] args)` method. |
+| **`TinyStories-valid-reduced.txt`** | First position argument in `TrainTinyStories`: Path to text dataset file. |
+| **`5`** | Second position argument in `TrainTinyStories`: Number of training epochs. |
+| **`16`** | Third position argument in `TrainTinyStories`: Minibatch size. |
+| **`64`** | Fourth position argument in `TrainTinyStories`: Context length sequence window ($T$). |
+| **`gpu` / `cpu`** | Fifth position argument in `TrainTinyStories`: Execution device target (`gpu` for OpenCL, `cpu` for multi-threaded Java). |
 
 ---
 
 ## 📝 Compliance with project RULES.md
 
-1.  **No External ML Libraries**: Core mathematical, tensor, and backpropagation logic is implemented completely from scratch.
-2.  **From-Scratch Algorithm Implementation**: Custom Trie tree, prefix matcher, WordPiece parser, character tokenizer, weight initializers, cross-entropy loss, AdamW, and binary serialization format.
-3.  **Visual Reporting**: Automatic execution of a built-in reporter compiling status tables, logs, and success rates in a sleek, responsive dashboard.
+1. **No External ML Libraries**: Core mathematical, tensor, and backpropagation logic is implemented completely from scratch.
+2. **From-Scratch Algorithm Implementation**: Custom Trie tree, prefix matcher, WordPiece parser, character tokenizer, weight initializers, cross-entropy loss, AdamW, and binary serialization format.
+3. **Visual Reporting**: Automatic execution of a built-in reporter compiling status tables, logs, and success rates in a sleek, responsive dashboard (`test_report.html`).
