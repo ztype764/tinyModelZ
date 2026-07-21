@@ -64,6 +64,11 @@ public class TrainTinyStories {
                 resumePath = args[++i];
             } else if ("--resume".equalsIgnoreCase(args[i])) {
                 resumePath = "auto";
+            } else if ("--force-gpu".equalsIgnoreCase(args[i]) || "--gpu-only".equalsIgnoreCase(args[i])) {
+                com.tinymodelz.math.DeviceManager.setForceGpu(true);
+            } else if ("--gpu-min-flops".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
+                com.tinymodelz.math.DeviceManager.setMinFlopsThreshold(Long.parseLong(args[++i]));
+                com.tinymodelz.math.DeviceManager.setForceGpu(false);
             } else if ("--start-epoch".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
                 requestedStartEpoch = Integer.parseInt(args[++i]);
             } else if (i == 0 && !args[i].startsWith("--")) {
