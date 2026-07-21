@@ -14,8 +14,22 @@ public class DeviceManager {
 
     private static final Logger logger = LoggerFactory.getLogger(DeviceManager.class);
     private static Device activeDevice = Device.CPU;
-    private static boolean forceGpu = true;
-    private static long minFlopsThreshold = 0L;
+    private static ExecutionMode executionMode = ExecutionMode.HYBRID;
+
+    public static synchronized void setExecutionMode(ExecutionMode mode) {
+        if (mode != null) {
+            executionMode = mode;
+            logger.info("Switched execution mode to: {}", mode);
+        }
+    }
+
+    public static ExecutionMode getExecutionMode() {
+        return executionMode;
+    }
+
+    public static boolean isGpuOnly() {
+        return isGpuActive() && executionMode == ExecutionMode.GPU_ONLY;
+    }
 
     /**
      * Sets the active compute device for matrix operations and training.
@@ -66,28 +80,11 @@ public class DeviceManager {
                (activeDevice == Device.GPU && (CUDAMathEngine.isAvailable() || GPUMathEngine.isAvailable()));
     }
 
-    public static boolean isForceGpu() {
-        return forceGpu;
-    }
-
-    public static void setForceGpu(boolean force) {
-        forceGpu = force;
-        logger.info("GPU-Only Mode for matrix operations set to: {}", forceGpu);
-    }
-
-    public static long getMinFlopsThreshold() {
-        return forceGpu ? 0L : minFlopsThreshold;
-    }
-
-    public static void setMinFlopsThreshold(long minFlops) {
-        minFlopsThreshold = minFlops;
-    }
-
     public static String getSummary() {
         if (activeDevice == Device.GPU_CUDA && CUDAMathEngine.isAvailable()) {
-            return "CUDA GPU (" + CUDAMathEngine.getDeviceName() + ")" + (forceGpu ? " [GPU-Only Mode]" : "");
+            return "CUDA GPU (" + CUDAMathEngine.getDeviceName() + ")";
         } else if (activeDevice == Device.GPU_OPENCL && GPUMathEngine.isAvailable()) {
-            return "OpenCL GPU (" + GPUMathEngine.getDeviceName() + ")" + (forceGpu ? " [GPU-Only Mode]" : "");
+            return "OpenCL GPU (" + GPUMathEngine.getDeviceName() + ")";
         } else {
             return "CPU (Multi-threaded Java Engine)";
         }

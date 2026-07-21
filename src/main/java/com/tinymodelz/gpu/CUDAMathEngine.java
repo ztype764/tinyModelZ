@@ -58,6 +58,11 @@ public class CUDAMathEngine {
     private static native String nGetDeviceName();
     private static native boolean nMatMul(float[] a, float[] b, float[] c, int m, int n, int k);
     private static native boolean nBatchedMatMul(float[] a, float[] b, float[] c, int numBatches, int m, int n, int k);
+    public static native long nAllocBuffer(long sizeBytes);
+    public static native void nFreeBuffer(long handle);
+    public static native boolean nCopyToGPU(long handle, float[] hData, long sizeBytes);
+    public static native boolean nCopyFromGPU(float[] hData, long handle, long sizeBytes);
+    public static native boolean nAdamWStep(long pHandle, long gHandle, long mHandle, long vHandle, int size, float lr, float beta1, float beta2, float eps, float weightDecay, float bc1, float bc2);
 
     public static boolean isAvailable() {
         return loaded && initialized && nIsAvailable();

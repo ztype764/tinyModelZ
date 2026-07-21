@@ -203,7 +203,93 @@ const char* cuda_ptx_code =
 
 "BEND:\n"
 "    ret;\n"
+"}\n"
+"\n"
+".visible .entry adamw_step_kernel(\n"
+"    .param .u64 param_P,\n"
+"    .param .u64 param_G,\n"
+"    .param .u64 param_M,\n"
+"    .param .u64 param_V,\n"
+"    .param .u32 param_size,\n"
+"    .param .f32 param_lr,\n"
+"    .param .f32 param_beta1,\n"
+"    .param .f32 param_beta2,\n"
+"    .param .f32 param_eps,\n"
+"    .param .f32 param_weightDecay,\n"
+"    .param .f32 param_bc1,\n"
+"    .param .f32 param_bc2\n"
+") {\n"
+"    .reg .b32 %r<10>;\n"
+"    .reg .b64 %rd<12>;\n"
+"    .reg .f32 %f<25>;\n"
+"    .reg .pred %p<2>;\n"
+"\n"
+"    mov.u32 %r0, %ctaid.x;\n"
+"    mov.u32 %r1, %ntid.x;\n"
+"    mov.u32 %r2, %tid.x;\n"
+"    mad.lo.s32 %r3, %r0, %r1, %r2;\n"
+"\n"
+"    ld.param.u32 %r4, [param_size];\n"
+"    setp.ge.s32 %p0, %r3, %r4;\n"
+"    @%p0 bra AEND;\n"
+"\n"
+"    ld.param.u64 %rd0, [param_P];\n"
+"    ld.param.u64 %rd1, [param_G];\n"
+"    ld.param.u64 %rd2, [param_M];\n"
+"    ld.param.u64 %rd3, [param_V];\n"
+"\n"
+"    mul.wide.s32 %rd4, %r3, 4;\n"
+"    add.s64 %rd5, %rd0, %rd4;\n"
+"    add.s64 %rd6, %rd1, %rd4;\n"
+"    add.s64 %rd7, %rd2, %rd4;\n"
+"    add.s64 %rd8, %rd3, %rd4;\n"
+"\n"
+"    ld.global.f32 %f0, [%rd5];\n"
+"    ld.global.f32 %f1, [%rd6];\n"
+"    ld.global.f32 %f2, [%rd7];\n"
+"    ld.global.f32 %f3, [%rd8];\n"
+"\n"
+"    ld.param.f32 %f4, [param_lr];\n"
+"    ld.param.f32 %f5, [param_beta1];\n"
+"    ld.param.f32 %f6, [param_beta2];\n"
+"    ld.param.f32 %f7, [param_eps];\n"
+"    ld.param.f32 %f8, [param_weightDecay];\n"
+"    ld.param.f32 %f9, [param_bc1];\n"
+"    ld.param.f32 %f10, [param_bc2];\n"
+"\n"
+"    mov.f32 %f11, 1.0;\n"
+"    sub.f32 %f11, %f11, %f5;\n"
+"    mul.f32 %f12, %f5, %f2;\n"
+"    fma.rn.f32 %f13, %f11, %f1, %f12;\n"
+"    st.global.f32 [%rd7], %f13;\n"
+"\n"
+"    mov.f32 %f14, 1.0;\n"
+"    sub.f32 %f14, %f14, %f6;\n"
+"    mul.f32 %f15, %f1, %f1;\n"
+"    mul.f32 %f16, %f6, %f3;\n"
+"    fma.rn.f32 %f17, %f14, %f15, %f16;\n"
+"    st.global.f32 [%rd8], %f17;\n"
+"\n"
+"    div.rn.f32 %f18, %f13, %f9;\n"
+"    div.rn.f32 %f19, %f17, %f10;\n"
+"\n"
+"    sqrt.rn.f32 %f20, %f19;\n"
+"    add.f32 %f20, %f20, %f7;\n"
+"    div.rn.f32 %f21, %f4, %f20;\n"
+"    mul.f32 %f21, %f21, %f18;\n"
+"\n"
+"    mul.f32 %f22, %f4, %f8;\n"
+"    mul.f32 %f22, %f22, %f0;\n"
+"\n"
+"    sub.f32 %f0, %f0, %f21;\n"
+"    sub.f32 %f0, %f0, %f22;\n"
+"    st.global.f32 [%rd5], %f0;\n"
+"\n"
+"AEND:\n"
+"    ret;\n"
 "}\n";
+
+static CUfunction g_adamwFunc = NULL;
 
 JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nInit(JNIEnv *env, jclass cls) {
     if (g_initialized) return JNI_TRUE;
@@ -238,6 +324,7 @@ JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nInit(JNIEnv *
 
     f_cuModuleGetFunction(&g_matmulFunc, g_module, "matmul_kernel");
     f_cuModuleGetFunction(&g_batchedMatmulFunc, g_module, "batched_matmul_kernel");
+    f_cuModuleGetFunction(&g_adamwFunc, g_module, "adamw_step_kernel");
 
     g_initialized = 1;
     return JNI_TRUE;
@@ -388,3 +475,56 @@ JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nBatchedMatMul
 
     return JNI_TRUE;
 }
+
+JNIEXPORT jlong JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nAllocBuffer(JNIEnv *env, jclass cls, jlong sizeBytes) {
+    if (!g_initialized) return 0;
+    CUdeviceptr d_ptr = 0;
+    if (f_cuMemAlloc(&d_ptr, (size_t)sizeBytes) == 0) {
+        return (jlong)d_ptr;
+    }
+    return 0;
+}
+
+JNIEXPORT void JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nFreeBuffer(JNIEnv *env, jclass cls, jlong handle) {
+    if (g_initialized && handle != 0) {
+        f_cuMemFree((CUdeviceptr)handle);
+    }
+}
+
+JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nCopyToGPU(JNIEnv *env, jclass cls, jlong handle, jfloatArray hData, jlong sizeBytes) {
+    if (!g_initialized || handle == 0 || hData == NULL) return JNI_FALSE;
+    jfloat *ptr = (*env)->GetPrimitiveArrayCritical(env, hData, NULL);
+    if (!ptr) return JNI_FALSE;
+    CUresult res = f_cuMemcpyHtoD((CUdeviceptr)handle, ptr, (size_t)sizeBytes);
+    (*env)->ReleasePrimitiveArrayCritical(env, hData, ptr, JNI_ABORT);
+    return res == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nCopyFromGPU(JNIEnv *env, jclass cls, jfloatArray hData, jlong handle, jlong sizeBytes) {
+    if (!g_initialized || handle == 0 || hData == NULL) return JNI_FALSE;
+    jfloat *ptr = (*env)->GetPrimitiveArrayCritical(env, hData, NULL);
+    if (!ptr) return JNI_FALSE;
+    CUresult res = f_cuMemcpyDtoH(ptr, (CUdeviceptr)handle, (size_t)sizeBytes);
+    (*env)->ReleasePrimitiveArrayCritical(env, hData, ptr, 0);
+    return res == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_CUDAMathEngine_nAdamWStep(
+        JNIEnv *env, jclass cls,
+        jlong pHandle, jlong gHandle, jlong mHandle, jlong vHandle,
+        jint size, jfloat lr, jfloat beta1, jfloat beta2, jfloat eps, jfloat weightDecay,
+        jfloat bc1, jfloat bc2) {
+
+    if (!g_initialized || !g_adamwFunc || pHandle == 0 || gHandle == 0 || mHandle == 0 || vHandle == 0) {
+        return JNI_FALSE;
+    }
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+    void* args[] = { &pHandle, &gHandle, &mHandle, &vHandle, &size, &lr, &beta1, &beta2, &eps, &weightDecay, &bc1, &bc2 };
+
+    f_cuLaunchKernel(g_adamwFunc, blocksPerGrid, 1, 1, threadsPerBlock, 1, 1, 0, NULL, args, NULL);
+    return JNI_TRUE;
+}
+

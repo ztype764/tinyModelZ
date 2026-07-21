@@ -16,7 +16,8 @@ tinyModelZ/
 │   │   │   ├── RandomInitializer.java  # Xavier/He parameter initializers
 │   │   │   ├── Tensor.java             # N-dimensional autograd tensor with shape/stride tracking
 │   │   │   ├── Device.java             # Compute device target enum (CPU, GPU)
-│   │   │   ├── DeviceManager.java      # Hardware compute device state manager
+│   │   │   ├── ExecutionMode.java      # Compute execution mode (CPU, HYBRID, GPU_ONLY)
+│   │   │   ├── DeviceManager.java      # Hardware compute device & execution mode manager
 │   │   │   └── MathIO.java             # TMA1/TMAT binary weight saving/loading
 │   │   ├── gpu/
 │   │   │   ├── GPUMathEngine.java      # OpenCL JNI native GPU hardware acceleration engine
@@ -116,8 +117,11 @@ The `Generator` class supports autoregressive generation using:
 
 ## ⚡ GPU Powered Training (`com.tinymodelz.gpu`)
 * **OpenCL & CUDA Backends**: Native hardware acceleration via OpenCL (`libtinymodelz_gpu.so`) or NVIDIA Driver API (`libtinymodelz_cuda.so`).
-* **Persistent Buffer Pooling**: Reuses memory buffers across iterations, delivering a **4x speedup** on matrix operations.
-* **Automatic Hardware Probing**: Detects GPUs at startup with zero-downtime multi-threaded CPU fallback.
+* **`GPU_ONLY` Execution Mode**: Model parameters, activations, gradient vectors, and AdamW momentum ($m, v$) state buffers reside 100% in GPU VRAM across all forward, backward, and optimizer update passes.
+* **GPU-Resident AdamW (`nAdamWStep`)**: Native CUDA PTX and OpenCL kernels update weights directly on GPU buffers, avoiding CPU array copies and PCIe round-trips during optimizer steps.
+* **Lazy Synchronization**: PCIe host-device memory transfers are minimized. Host memory is lazily synchronized from GPU VRAM only when scalar loss is retrieved or when saving model checkpoints.
+* **Persistent Buffer Pooling**: Reuses device memory allocations across iterations, delivering maximum throughput and zero GC pause overhead.
+* **Automatic Hardware Probing**: Detects GPU capabilities at startup with zero-downtime multi-threaded CPU fallback.
 
 ---
 
@@ -181,9 +185,10 @@ JAVA_HOME=tools/graalvm ./tools/maven/bin/mvn exec:java \
 
 #### CLI Option Flags:
 * `--tokenizer [bpe|character|trie]`: Tokenization algorithm (default: `bpe`)
+* `--mode [gpu_only|hybrid|cpu]` / `--execution-mode [gpu_only|hybrid|cpu]`: Compute execution mode (default: `gpu_only`)
 * `--resume [folder]`: Path to existing run folder or specific `epoch_N` directory to resume training
 * `--start-epoch [N]`: Explicitly set starting epoch index when resuming
-* `--device [cuda|opencl|cpu]`: Execution target hardware engine
+* `--device [cuda|opencl|gpu|cpu]`: Execution target hardware engine (default: `gpu`)
 
 ---
 

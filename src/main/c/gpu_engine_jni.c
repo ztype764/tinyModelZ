@@ -89,7 +89,25 @@ const char* gpu_source =
 "__kernel void vec_add(__global const float* A, __global const float* B, __global float* C, int size) {\n"
 "    int idx = get_global_id(0);\n"
 "    if (idx < size) C[idx] = A[idx] + B[idx];\n"
+"}\n"
+"__kernel void adamw_step(__global float* p, __global const float* g, __global float* m, __global float* v, int size, float lr, float beta1, float beta2, float eps, float weightDecay, float bc1, float bc2) {\n"
+"    int i = get_global_id(0);\n"
+"    if (i < size) {\n"
+"        float w = p[i];\n"
+"        float grad = g[i];\n"
+"        float mVal = beta1 * m[i] + (1.0f - beta1) * grad;\n"
+"        m[i] = mVal;\n"
+"        float vVal = beta2 * v[i] + (1.0f - beta2) * grad * grad;\n"
+"        v[i] = vVal;\n"
+"        float mHat = mVal / bc1;\n"
+"        float vHat = vVal / bc2;\n"
+"        float adamStep = (lr / (sqrt(vHat) + eps)) * mHat;\n"
+"        float decayStep = (weightDecay != 0.0f) ? lr * weightDecay * w : 0.0f;\n"
+"        p[i] = w - adamStep - decayStep;\n"
+"    }\n"
 "}\n";
+
+static cl_kernel kernel_adamw = NULL;
 
 static int internal_gpu_init() {
     if (gpu_initialized) return 1;
@@ -146,6 +164,7 @@ static int internal_gpu_init() {
     kernel_matmul = p_clCreateKernel(program, "matmul", &err);
     kernel_batched_matmul = p_clCreateKernel(program, "batched_matmul", &err);
     kernel_add = p_clCreateKernel(program, "vec_add", &err);
+    kernel_adamw = p_clCreateKernel(program, "adamw_step", &err);
 
     if (err != 0 || !kernel_matmul || !kernel_batched_matmul) return 0;
 
@@ -273,3 +292,71 @@ JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nBatchedMatMul(
 
     return JNI_TRUE;
 }
+
+JNIEXPORT jlong JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nAllocBuffer(JNIEnv *env, jclass cls, jlong sizeBytes) {
+    if (!gpu_initialized && !internal_gpu_init()) return 0;
+    cl_int err;
+    cl_mem buf = p_clCreateBuffer(context, 1, (size_t)sizeBytes, NULL, &err);
+    if (err == 0 && buf != NULL) {
+        return (jlong)buf;
+    }
+    return 0;
+}
+
+JNIEXPORT void JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nFreeBuffer(JNIEnv *env, jclass cls, jlong handle) {
+    if (gpu_initialized && handle != 0) {
+        p_clReleaseMemObject((cl_mem)handle);
+    }
+}
+
+JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nCopyToGPU(JNIEnv *env, jclass cls, jlong handle, jfloatArray hData, jlong sizeBytes) {
+    if ((!gpu_initialized && !internal_gpu_init()) || handle == 0 || hData == NULL) return JNI_FALSE;
+    jfloat *ptr = (*env)->GetPrimitiveArrayCritical(env, hData, NULL);
+    if (!ptr) return JNI_FALSE;
+    cl_int err = p_clEnqueueWriteBuffer(queue, (cl_mem)handle, 1, 0, (size_t)sizeBytes, ptr, 0, NULL, NULL);
+    (*env)->ReleasePrimitiveArrayCritical(env, hData, ptr, JNI_ABORT);
+    return err == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nCopyFromGPU(JNIEnv *env, jclass cls, jlong handle, jfloatArray hData, jlong sizeBytes) {
+    if ((!gpu_initialized && !internal_gpu_init()) || handle == 0 || hData == NULL) return JNI_FALSE;
+    jfloat *ptr = (*env)->GetPrimitiveArrayCritical(env, hData, NULL);
+    if (!ptr) return JNI_FALSE;
+    cl_int err = p_clEnqueueReadBuffer(queue, (cl_mem)handle, 1, 0, (size_t)sizeBytes, ptr, 0, NULL, NULL);
+    (*env)->ReleasePrimitiveArrayCritical(env, hData, ptr, 0);
+    return err == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_tinymodelz_gpu_GPUMathEngine_nAdamWStep(
+        JNIEnv *env, jclass cls,
+        jlong pHandle, jlong gHandle, jlong mHandle, jlong vHandle,
+        jint size, jfloat lr, jfloat beta1, jfloat beta2, jfloat eps, jfloat weightDecay,
+        jfloat bc1, jfloat bc2) {
+
+    if ((!gpu_initialized && !internal_gpu_init()) || !kernel_adamw || pHandle == 0 || gHandle == 0 || mHandle == 0 || vHandle == 0) {
+        return JNI_FALSE;
+    }
+
+    cl_mem pBuf = (cl_mem)pHandle;
+    cl_mem gBuf = (cl_mem)gHandle;
+    cl_mem mBuf = (cl_mem)mHandle;
+    cl_mem vBuf = (cl_mem)vHandle;
+
+    p_clSetKernelArg(kernel_adamw, 0, sizeof(cl_mem), &pBuf);
+    p_clSetKernelArg(kernel_adamw, 1, sizeof(cl_mem), &gBuf);
+    p_clSetKernelArg(kernel_adamw, 2, sizeof(cl_mem), &mBuf);
+    p_clSetKernelArg(kernel_adamw, 3, sizeof(cl_mem), &vBuf);
+    p_clSetKernelArg(kernel_adamw, 4, sizeof(int), &size);
+    p_clSetKernelArg(kernel_adamw, 5, sizeof(float), &lr);
+    p_clSetKernelArg(kernel_adamw, 6, sizeof(float), &beta1);
+    p_clSetKernelArg(kernel_adamw, 7, sizeof(float), &beta2);
+    p_clSetKernelArg(kernel_adamw, 8, sizeof(float), &eps);
+    p_clSetKernelArg(kernel_adamw, 9, sizeof(float), &weightDecay);
+    p_clSetKernelArg(kernel_adamw, 10, sizeof(float), &bc1);
+    p_clSetKernelArg(kernel_adamw, 11, sizeof(float), &bc2);
+
+    size_t global = (size_t)size;
+    cl_int err = p_clEnqueueNDRangeKernel(queue, kernel_adamw, 1, NULL, &global, NULL, 0, NULL, NULL);
+    return err == 0 ? JNI_TRUE : JNI_FALSE;
+}
+

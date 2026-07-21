@@ -1,5 +1,8 @@
 package com.tinymodelz.math;
 
+import com.tinymodelz.gpu.CUDAMathEngine;
+import com.tinymodelz.gpu.GPUMathEngine;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -56,6 +59,75 @@ public class Tensor {
     private List<Tensor> creators;
     private String opName;
     private BackwardFunction backwardFn;
+
+    // GPU Residency & Lazy Sync fields
+    private Device device = Device.CPU;
+    private long gpuBufferHandle = 0;
+    private boolean onGPU = false;
+    private boolean dirtyOnHost = false;
+    private boolean dirtyOnGPU = false;
+
+    public synchronized boolean toGPU() {
+        if (!DeviceManager.isGpuActive()) return false;
+        if (!onGPU) {
+            long bytes = (long) size * Float.BYTES;
+            if (gpuBufferHandle == 0 && bytes > 0) {
+                if (DeviceManager.getDevice() == Device.GPU_CUDA) {
+                    gpuBufferHandle = CUDAMathEngine.nAllocBuffer(bytes);
+                } else if (DeviceManager.getDevice() == Device.GPU_OPENCL) {
+                    gpuBufferHandle = GPUMathEngine.nAllocBuffer(bytes);
+                }
+            }
+            onGPU = (gpuBufferHandle != 0);
+        }
+        if (onGPU && (!dirtyOnGPU || !dirtyOnHost)) {
+            if (DeviceManager.getDevice() == Device.GPU_CUDA) {
+                CUDAMathEngine.nCopyToGPU(gpuBufferHandle, toContiguous().data, (long) size * Float.BYTES);
+            } else if (DeviceManager.getDevice() == Device.GPU_OPENCL) {
+                GPUMathEngine.nCopyToGPU(gpuBufferHandle, toContiguous().data, (long) size * Float.BYTES);
+            }
+            dirtyOnGPU = false;
+            device = DeviceManager.getDevice();
+        }
+        return onGPU;
+    }
+
+    public synchronized boolean toCPU() {
+        if (onGPU && dirtyOnHost && gpuBufferHandle != 0) {
+            if (DeviceManager.getDevice() == Device.GPU_CUDA) {
+                CUDAMathEngine.nCopyFromGPU(data, gpuBufferHandle, (long) size * Float.BYTES);
+            } else if (DeviceManager.getDevice() == Device.GPU_OPENCL) {
+                GPUMathEngine.nCopyFromGPU(data, gpuBufferHandle, (long) size * Float.BYTES);
+            }
+            dirtyOnHost = false;
+            device = Device.CPU;
+        }
+        return true;
+    }
+
+    public boolean isOnGPU() {
+        return onGPU;
+    }
+
+    public boolean isDirtyOnGPU() {
+        return dirtyOnGPU;
+    }
+
+    public boolean isDirtyOnHost() {
+        return dirtyOnHost;
+    }
+
+    public long getGpuBufferHandle() {
+        return gpuBufferHandle;
+    }
+
+    public void markDirtyOnGPU() {
+        this.dirtyOnGPU = true;
+    }
+
+    public void markDirtyOnHost() {
+        this.dirtyOnHost = true;
+    }
 
     @FunctionalInterface
     public interface BackwardFunction {
@@ -147,6 +219,7 @@ public class Tensor {
 
     // Getters and Configurations
     public float[] getData() {
+        toCPU();
         return data;
     }
 
@@ -675,7 +748,7 @@ public class Tensor {
 
         // --- GPU Acceleration Dispatch ---
         long totalFlops = (long) numBatches * M * K * N;
-        if (DeviceManager.isGpuActive() && (DeviceManager.isForceGpu() || totalFlops >= DeviceManager.getMinFlopsThreshold())) {
+        if (DeviceManager.isGpuActive() && totalFlops >= 2_000_000L) {
             boolean success = false;
             if (DeviceManager.getDevice() == Device.GPU_CUDA && com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
                 success = com.tinymodelz.gpu.CUDAMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches,

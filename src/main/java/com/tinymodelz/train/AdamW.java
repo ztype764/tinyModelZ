@@ -1,5 +1,10 @@
 package com.tinymodelz.train;
 
+import com.tinymodelz.gpu.CUDAMathEngine;
+import com.tinymodelz.gpu.GPUMathEngine;
+import com.tinymodelz.math.Device;
+import com.tinymodelz.math.DeviceManager;
+import com.tinymodelz.math.ExecutionMode;
 import com.tinymodelz.math.Tensor;
 
 import java.util.Collection;
@@ -24,6 +29,10 @@ public class AdamW {
     private int stepCount = 0;
     private final Map<Tensor, float[]> m = new IdentityHashMap<>();
     private final Map<Tensor, float[]> v = new IdentityHashMap<>();
+
+    private final Map<Tensor, Tensor> mGpuTensors = new IdentityHashMap<>();
+    private final Map<Tensor, Tensor> vGpuTensors = new IdentityHashMap<>();
+    private final Map<Tensor, Tensor> gradGpuTensors = new IdentityHashMap<>();
 
     /**
      * Constructs an AdamW optimizer.
@@ -65,17 +74,68 @@ public class AdamW {
         float biasCorrection1 = (float) (1.0 - Math.pow(beta1, stepCount));
         float biasCorrection2 = (float) (1.0 - Math.pow(beta2, stepCount));
 
+        boolean useGpuOpt = DeviceManager.isGpuActive() && (DeviceManager.getExecutionMode() == ExecutionMode.GPU_ONLY || DeviceManager.isGpuOnly());
+
         for (Tensor p : parameters) {
             if (!p.requiresGrad()) continue;
             float[] grad = p.getGrad();
             if (grad == null) continue;
 
-            float[] data = p.getData();
             int size = p.size();
 
             // Initialize moment state buffers using computing map
             float[] mState = m.computeIfAbsent(p, k -> new float[size]);
             float[] vState = v.computeIfAbsent(p, k -> new float[size]);
+
+            if (useGpuOpt && p.isContiguous() && p.offset() == 0) {
+                p.toGPU();
+
+                Tensor mTensor = mGpuTensors.computeIfAbsent(p, k -> {
+                    Tensor t = new Tensor(mState, p.getShape());
+                    t.toGPU();
+                    return t;
+                });
+                Tensor vTensor = vGpuTensors.computeIfAbsent(p, k -> {
+                    Tensor t = new Tensor(vState, p.getShape());
+                    t.toGPU();
+                    return t;
+                });
+                Tensor gradTensor = gradGpuTensors.computeIfAbsent(p, k -> {
+                    Tensor t = new Tensor(grad, p.getShape());
+                    t.toGPU();
+                    return t;
+                });
+
+                gradTensor.toGPU();
+
+                boolean success = false;
+                if (DeviceManager.getDevice() == Device.GPU_CUDA) {
+                    success = CUDAMathEngine.nAdamWStep(
+                        p.getGpuBufferHandle(),
+                        gradTensor.getGpuBufferHandle(),
+                        mTensor.getGpuBufferHandle(),
+                        vTensor.getGpuBufferHandle(),
+                        size, lr, beta1, beta2, eps, weightDecay, biasCorrection1, biasCorrection2
+                    );
+                } else if (DeviceManager.getDevice() == Device.GPU_OPENCL) {
+                    success = GPUMathEngine.nAdamWStep(
+                        p.getGpuBufferHandle(),
+                        gradTensor.getGpuBufferHandle(),
+                        mTensor.getGpuBufferHandle(),
+                        vTensor.getGpuBufferHandle(),
+                        size, lr, beta1, beta2, eps, weightDecay, biasCorrection1, biasCorrection2
+                    );
+                }
+
+                if (success) {
+                    p.markDirtyOnHost();
+                    mTensor.markDirtyOnHost();
+                    vTensor.markDirtyOnHost();
+                    continue;
+                }
+            }
+
+            float[] data = p.getData();
 
             // Apply updates in parallel for contiguous parameter tensors
             if (p.isContiguous() && p.offset() == 0) {

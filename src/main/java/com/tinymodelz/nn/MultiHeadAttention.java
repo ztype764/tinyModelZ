@@ -94,8 +94,9 @@ public class MultiHeadAttention extends Module {
         Tensor vSplit = v.reshape(B, T, numHeads, headDim).transpose(1, 2);
 
         // Cache accumulation along sequence length dimension (dim 2)
+        boolean isFirstCachePass = (layerCache == null || layerCache.keyCache == null);
         if (layerCache != null) {
-            if (layerCache.keyCache != null && layerCache.valueCache != null) {
+            if (!isFirstCachePass) {
                 kSplit = Tensor.cat(java.util.List.of(layerCache.keyCache, kSplit), 2);
                 vSplit = Tensor.cat(java.util.List.of(layerCache.valueCache, vSplit), 2);
             }
@@ -111,7 +112,7 @@ public class MultiHeadAttention extends Module {
         scores = scores.multiply(scale);
 
         // Apply masking if present (only when processing multiple tokens with unpopulated cache)
-        if (mask != null && T > 1 && (layerCache == null || layerCache.keyCache == null)) {
+        if (mask != null && T > 1 && isFirstCachePass) {
             scores = scores.maskedFill(mask, -1e9f);
         }
 

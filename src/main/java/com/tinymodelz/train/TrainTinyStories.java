@@ -43,6 +43,7 @@ public class TrainTinyStories {
         int numHeads = 2;
         int feedForwardDim = 4 * embedDim;
         String tokenizerTypeArg = "bpe";
+        String modeArg = "gpu_only";
         String resumePath = null;
         int requestedStartEpoch = -1;
 
@@ -58,17 +59,14 @@ public class TrainTinyStories {
                 seqLen = Integer.parseInt(args[++i]);
             } else if ("--device".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
                 deviceArg = args[++i];
+            } else if (("--mode".equalsIgnoreCase(args[i]) || "--execution-mode".equalsIgnoreCase(args[i])) && i + 1 < args.length) {
+                modeArg = args[++i];
             } else if ("--tokenizer".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
                 tokenizerTypeArg = args[++i];
             } else if (("--resume".equalsIgnoreCase(args[i]) || "--checkpoint".equalsIgnoreCase(args[i])) && i + 1 < args.length && !args[i + 1].startsWith("--")) {
                 resumePath = args[++i];
             } else if ("--resume".equalsIgnoreCase(args[i])) {
                 resumePath = "auto";
-            } else if ("--force-gpu".equalsIgnoreCase(args[i]) || "--gpu-only".equalsIgnoreCase(args[i])) {
-                com.tinymodelz.math.DeviceManager.setForceGpu(true);
-            } else if ("--gpu-min-flops".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
-                com.tinymodelz.math.DeviceManager.setMinFlopsThreshold(Long.parseLong(args[++i]));
-                com.tinymodelz.math.DeviceManager.setForceGpu(false);
             } else if ("--start-epoch".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
                 requestedStartEpoch = Integer.parseInt(args[++i]);
             } else if (i == 0 && !args[i].startsWith("--")) {
@@ -104,6 +102,14 @@ public class TrainTinyStories {
             com.tinymodelz.math.DeviceManager.setDevice(com.tinymodelz.math.Device.GPU);
         } else {
             com.tinymodelz.math.DeviceManager.setDevice(com.tinymodelz.math.Device.CPU);
+        }
+
+        if ("gpu_only".equalsIgnoreCase(modeArg) || "gpu-only".equalsIgnoreCase(modeArg)) {
+            com.tinymodelz.math.DeviceManager.setExecutionMode(com.tinymodelz.math.ExecutionMode.GPU_ONLY);
+        } else if ("cpu".equalsIgnoreCase(modeArg)) {
+            com.tinymodelz.math.DeviceManager.setExecutionMode(com.tinymodelz.math.ExecutionMode.CPU);
+        } else {
+            com.tinymodelz.math.DeviceManager.setExecutionMode(com.tinymodelz.math.ExecutionMode.HYBRID);
         }
 
         TokenizerType tokenizerType = TokenizerType.fromString(tokenizerTypeArg);
