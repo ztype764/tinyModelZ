@@ -15,25 +15,31 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
+import org.springframework.lang.NonNull;
+
 /**
  * <h3>TinyStoriesPipelineTest</h3>
  *
- * <p>Integration unit test suite validating all steps of the language modeling pipeline:
+ * <p>
+ * Integration unit test suite validating all steps of the language modeling
+ * pipeline:
  * <ul>
- *   <li>1. Dataset Loading (UTF-8 stream parsing, EOS token detection)</li>
- *   <li>2. Vocabulary Building (Automatic dataset character vocabulary generation)</li>
- *   <li>3. Tokenization Round-Trip (Exact encode -> decode text matching)</li>
- *   <li>4. DataLoader Target Shifting (Input $X_t$, Label $Y_{t+1}$ target alignment)</li>
- *   <li>5. TinyGPT Model Dimensions ([B, T, V] shape verification)</li>
- *   <li>6. Single-Batch Overfitting (Training loss reduction close to zero)</li>
- *   <li>7. Checkpoint Save & Load (Weight restoration and post-reload inference)</li>
+ * <li>1. Dataset Loading (UTF-8 stream parsing, EOS token detection)</li>
+ * <li>2. Vocabulary Building (Automatic dataset character vocabulary
+ * generation)</li>
+ * <li>3. Tokenization Round-Trip (Exact encode -> decode text matching)</li>
+ * <li>4. DataLoader Target Shifting (Input $X_t$, Label $Y_{t+1}$ target
+ * alignment)</li>
+ * <li>5. TinyGPT Model Dimensions ([B, T, V] shape verification)</li>
+ * <li>6. Single-Batch Overfitting (Training loss reduction close to zero)</li>
+ * <li>7. Checkpoint Save & Load (Weight restoration and post-reload
+ * inference)</li>
  * </ul>
  * </p>
  */
 public class TinyStoriesPipelineTest {
 
-    private static final String SAMPLE_CORPUS =
-            "Once upon a time, there was a little dog named Max.\n" +
+    private static final String SAMPLE_CORPUS = "Once upon a time, there was a little dog named Max.\n" +
             "Max loved to play in the park with his ball.\n" +
             "<|endoftext|>\n" +
             "One day, a girl named Mia found a pretty red box.\n" +
@@ -48,7 +54,8 @@ public class TinyStoriesPipelineTest {
                 throw new RuntimeException(e);
             }
         });
-        TestReporter.runTest("2. Automatic vocabulary extraction and tokenization round-trip", () -> testTokenizerRoundtrip());
+        TestReporter.runTest("2. Automatic vocabulary extraction and tokenization round-trip",
+                () -> testTokenizerRoundtrip());
         TestReporter.runTest("3. DataLoader target shifting logic", () -> testDataLoaderShifting());
         TestReporter.runTest("4. TinyGPT output tensor dimensions", () -> testTinyGPTDimensions());
         TestReporter.runTest("5. Single-batch overfit convergence test", () -> testOverfitConvergence());
@@ -133,7 +140,8 @@ public class TinyStoriesPipelineTest {
         float[] yData = y.getData();
 
         for (int i = 0; i < seqLen - 1; i++) {
-            assertEquals(xData[i + 1], yData[i], "DataLoader target label at index " + i + " must equal input token at index " + (i + 1));
+            assertEquals(xData[i + 1], yData[i],
+                    "DataLoader target label at index " + i + " must equal input token at index " + (i + 1));
         }
 
         TestReporter.logMetric("Input batch X", Arrays.toString(xData));
@@ -154,14 +162,15 @@ public class TinyStoriesPipelineTest {
         TinyGPT model = new TinyGPT(vocabSize, embedDim, maxSeqLen, numLayers, numHeads, feedForwardDim, 0.0f);
         model.eval();
 
-        float[] inputIds = {1, 2, 3, 4, 5, 6, 7, 8};
-        Tensor x = new Tensor(inputIds, new int[]{2, 4}); // [B=2, T=4]
+        float[] inputIds = { 1, 2, 3, 4, 5, 6, 7, 8 };
+        Tensor x = new Tensor(inputIds, new int[] { 2, 4 }); // [B=2, T=4]
 
         Tensor logits = model.forward(x);
-        int[] expectedShape = {2, 4, vocabSize};
+        int[] expectedShape = { 2, 4, vocabSize };
 
         assertTrue(Arrays.equals(expectedShape, logits.getShape()),
-                "TinyGPT output shape mismatch — expected " + Arrays.toString(expectedShape) + ", got " + Arrays.toString(logits.getShape()));
+                "TinyGPT output shape mismatch — expected " + Arrays.toString(expectedShape) + ", got "
+                        + Arrays.toString(logits.getShape()));
 
         TestReporter.logMetric("Input shape", Arrays.toString(x.getShape()));
         TestReporter.logMetric("Output logits shape", Arrays.toString(logits.getShape()));
@@ -196,7 +205,8 @@ public class TinyStoriesPipelineTest {
     }
 
     /**
-     * 6. Verifies checkpoint persistence, reload weight restoration, and generation post-reload.
+     * 6. Verifies checkpoint persistence, reload weight restoration, and generation
+     * post-reload.
      */
     private static void testCheckpointAndInference() throws IOException {
         CharacterTokenizer tokenizer = CharacterTokenizer.fromText(SAMPLE_CORPUS, List.of("<|endoftext|>"));

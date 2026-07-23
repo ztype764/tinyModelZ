@@ -219,7 +219,6 @@ public class Tensor {
 
     // Getters and Configurations
     public float[] getData() {
-        toCPU();
         return data;
     }
 
@@ -748,7 +747,7 @@ public class Tensor {
 
         // --- GPU Acceleration Dispatch ---
         long totalFlops = (long) numBatches * M * K * N;
-        if (DeviceManager.isGpuActive() && totalFlops >= 2_000_000L) {
+        if (DeviceManager.isGpuActive() && totalFlops >= 10_000_000L) {
             boolean success = false;
             if (DeviceManager.getDevice() == Device.GPU_CUDA && com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
                 success = com.tinymodelz.gpu.CUDAMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches,

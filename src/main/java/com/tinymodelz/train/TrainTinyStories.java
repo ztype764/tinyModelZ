@@ -46,6 +46,7 @@ public class TrainTinyStories {
         String modeArg = "gpu_only";
         String resumePath = null;
         int requestedStartEpoch = -1;
+        int numMerges = -1;
 
         // Parse CLI arguments
         for (int i = 0; i < args.length; i++) {
@@ -63,6 +64,8 @@ public class TrainTinyStories {
                 modeArg = args[++i];
             } else if ("--tokenizer".equalsIgnoreCase(args[i]) && i + 1 < args.length) {
                 tokenizerTypeArg = args[++i];
+            } else if (("--num-merges".equalsIgnoreCase(args[i]) || "--merges".equalsIgnoreCase(args[i])) && i + 1 < args.length) {
+                numMerges = Integer.parseInt(args[++i]);
             } else if (("--resume".equalsIgnoreCase(args[i]) || "--checkpoint".equalsIgnoreCase(args[i])) && i + 1 < args.length && !args[i + 1].startsWith("--")) {
                 resumePath = args[++i];
             } else if ("--resume".equalsIgnoreCase(args[i])) {
@@ -133,12 +136,12 @@ public class TrainTinyStories {
             System.exit(1);
         }
 
-        // --- Step 1: Read Dataset ---
-        logger.info("1. Reading raw dataset file...");
-        String text;
+        // --- Step 1: Read Dataset Metadata ---
+        logger.info("1. Reading raw dataset file metadata: {}...", datasetFile.toAbsolutePath());
+        long fileSize = 0;
         try {
-            text = Files.readString(datasetFile, StandardCharsets.UTF_8);
-            logger.info("Dataset loaded successfully: {} characters, {} bytes", text.length(), Files.size(datasetFile));
+            fileSize = Files.size(datasetFile);
+            logger.info("Dataset file verified: {} bytes", fileSize);
         } catch (IOException e) {
             logger.error("Failed to read dataset file: {}", e.getMessage());
             System.exit(1);
@@ -210,7 +213,13 @@ public class TrainTinyStories {
         }
         if (tokenizer == null) {
             List<String> customTokens = List.of("<|endoftext|>");
-            tokenizer = TokenizerFactory.createTokenizer(tokenizerType, text, customTokens);
+            String sampleText = "";
+            try {
+                sampleText = readDatasetSample(datasetFile, 10_000_000);
+            } catch (IOException e) {
+                logger.warn("Failed to sample dataset for tokenizer creation: {}", e.getMessage());
+            }
+            tokenizer = TokenizerFactory.createTokenizer(tokenizerType, sampleText, customTokens, numMerges);
         }
 
         int vocabSize = tokenizer.getVocabSize();
@@ -218,7 +227,14 @@ public class TrainTinyStories {
 
         // --- Step 3 & 4: TextDataset & DataLoader ---
         logger.info("3. Tokenizing dataset into continuous token stream...");
-        TextDataset dataset = new TextDataset(text, tokenizer);
+        TextDataset dataset;
+        try {
+            dataset = new TextDataset(datasetFile, tokenizer);
+        } catch (IOException e) {
+            logger.error("Failed to stream and tokenize dataset file: {}", e.getMessage());
+            System.exit(1);
+            return;
+        }
         logger.info("Total tokens in dataset: {}", dataset.size());
 
         DataLoader loader = new DataLoader(dataset, batchSize, seqLen, true);
@@ -342,6 +358,18 @@ public class TrainTinyStories {
         File metaFile = new File(runDir, "run_info.properties");
         try (FileOutputStream out = new FileOutputStream(metaFile)) {
             props.store(out, "TinyModelZ Training Run Metadata");
+        }
+    }
+
+    private static String readDatasetSample(Path filePath, int maxChars) throws IOException {
+        try (java.io.BufferedReader reader = Files.newBufferedReader(filePath, StandardCharsets.UTF_8)) {
+            StringBuilder sb = new StringBuilder();
+            char[] buf = new char[8192];
+            int read;
+            while (sb.length() < maxChars && (read = reader.read(buf, 0, Math.min(buf.length, maxChars - sb.length()))) != -1) {
+                sb.append(buf, 0, read);
+            }
+            return sb.toString();
         }
     }
 }

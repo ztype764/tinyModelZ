@@ -8,7 +8,6 @@ import com.tinymodelz.tokenizer.Tokenizer;
 import com.tinymodelz.tokenizer.TokenizerFactory;
 import com.tinymodelz.tokenizer.TokenizerFactory.TokenizerType;
 import com.tinymodelz.tokenizer.TrieTokenizer;
-import com.tinymodelz.TestReporter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -92,14 +91,15 @@ public class TokenizerAndResumeTest {
     public static void runTests() {
         TokenizerAndResumeTest test = new TokenizerAndResumeTest();
         try {
-            com.tinymodelz.TestReporter.runTest("Multi-tokenizer creation and checkpoint serialization (Character, BPE, Trie)", () -> {
-                try {
-                    Path temp = java.nio.file.Files.createTempDirectory("tok_test");
-                    test.testTokenizerFactoryAndSerialization(temp);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            com.tinymodelz.TestReporter
+                    .runTest("Multi-tokenizer creation and checkpoint serialization (Character, BPE, Trie)", () -> {
+                        try {
+                            Path temp = java.nio.file.Files.createTempDirectory("tok_test");
+                            test.testTokenizerFactoryAndSerialization(temp);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
             com.tinymodelz.TestReporter.runTest("Resuming training pipeline from epoch 2 checkpoint", () -> {
                 try {
                     Path temp = java.nio.file.Files.createTempDirectory("resume_test");

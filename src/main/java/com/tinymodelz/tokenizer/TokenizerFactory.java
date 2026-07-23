@@ -9,7 +9,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,8 +18,10 @@ import java.util.Properties;
 /**
  * <h3>TokenizerFactory</h3>
  *
- * <p>Unified factory and serialization utility for managing all tokenizer types
- * ({@link CharacterTokenizer}, {@link BPETokenizer}, {@link TrieTokenizer}).</p>
+ * <p>
+ * Unified factory and serialization utility for managing all tokenizer types
+ * ({@link CharacterTokenizer}, {@link BPETokenizer}, {@link TrieTokenizer}).
+ * </p>
  */
 public class TokenizerFactory {
 
@@ -32,25 +33,32 @@ public class TokenizerFactory {
         TRIE;
 
         public static TokenizerType fromString(String type) {
-            if (type == null) return CHARACTER;
+            if (type == null)
+                return CHARACTER;
             String t = type.trim().toLowerCase();
-            if (t.equals("bpe")) return BPE;
-            if (t.equals("trie") || t.equals("wordpiece") || t.equals("maxmatch")) return TRIE;
+            if (t.equals("bpe"))
+                return BPE;
+            if (t.equals("trie") || t.equals("wordpiece") || t.equals("maxmatch"))
+                return TRIE;
             return CHARACTER;
         }
 
         public String toSubfolderName() {
             switch (this) {
-                case BPE: return "bpe";
-                case TRIE: return "trie";
+                case BPE:
+                    return "bpe";
+                case TRIE:
+                    return "trie";
                 case CHARACTER:
-                default: return "char";
+                default:
+                    return "char";
             }
         }
     }
 
     /**
      * Constructs a Tokenizer instance based on requested type and text corpus.
+     * Dynamically determines BPE merge count based on dataset size.
      *
      * @param type         tokenizer algorithm type
      * @param corpusText   raw dataset text
@@ -58,20 +66,47 @@ public class TokenizerFactory {
      * @return constructed Tokenizer
      */
     public static Tokenizer createTokenizer(TokenizerType type, String corpusText, List<String> customTokens) {
+        return createTokenizer(type, corpusText, customTokens, -1);
+    }
+
+    /**
+     * Constructs a Tokenizer instance based on requested type, text corpus, and
+     * merge count.
+     *
+     * @param type         tokenizer algorithm type
+     * @param corpusText   raw dataset text
+     * @param customTokens custom special tokens (e.g. "&lt;|endoftext|&gt;")
+     * @param numMerges    target BPE merge count (&lt;= 0 for dynamic
+     *                     dataset-scaled calculation)
+     * @return constructed Tokenizer
+     */
+    public static Tokenizer createTokenizer(TokenizerType type, String corpusText, List<String> customTokens,
+            int numMerges) {
         if (customTokens == null) {
             customTokens = List.of("<|endoftext|>");
         }
+        // Cap text sample to 10MB to avoid high memory footprint during initial
+        // BPE/Trie vocab creation
+        String corpusSample = corpusText.length() > 10_000_000 ? corpusText.substring(0, 10_000_000) : corpusText;
+
+        int targetMerges = numMerges;
+        if (targetMerges <= 0) {
+            // Dynamic scaling: scale merges proportionally with dataset sample length
+            // (bounded between 200 and 2500)
+            targetMerges = Math.min(2500, Math.max(200, corpusSample.length() / 2000));
+        }
+
         switch (type) {
             case BPE:
-                logger.info("Training BPETokenizer on text corpus (numMerges=300)...");
-                return BPETokenizer.trainFromCorpus(corpusText, 300);
+                logger.info("Training BPETokenizer on dataset sample (dynamic numMerges={})...", targetMerges);
+                return BPETokenizer.trainFromCorpus(corpusSample, targetMerges);
             case TRIE:
-                logger.info("Constructing TrieTokenizer (WordPiece/MaxMatch) from text corpus...");
-                return buildTrieTokenizerFromCorpus(corpusText, customTokens);
+                logger.info("Constructing TrieTokenizer (WordPiece/MaxMatch) from dataset sample...");
+                return buildTrieTokenizerFromCorpus(corpusSample, customTokens);
             case CHARACTER:
             default:
-                logger.info("Constructing CharacterTokenizer from text corpus...");
-                return CharacterTokenizer.fromText(corpusText, customTokens);
+                logger.info("Constructing CharacterTokenizer from dataset sample...");
+                return CharacterTokenizer.fromText(corpusSample, customTokens);
         }
     }
 
@@ -87,7 +122,8 @@ public class TokenizerFactory {
         vocab.add("[MASK]");
         if (customTokens != null) {
             for (String c : customTokens) {
-                if (!vocab.contains(c)) vocab.add(c);
+                if (!vocab.contains(c))
+                    vocab.add(c);
             }
         }
 
@@ -119,7 +155,8 @@ public class TokenizerFactory {
     }
 
     /**
-     * Saves tokenizer metadata, vocabulary, and BPE merges to the specified directory.
+     * Saves tokenizer metadata, vocabulary, and BPE merges to the specified
+     * directory.
      *
      * @param tokenizer tokenizer instance to save
      * @param type      tokenizer algorithm type
@@ -166,13 +203,15 @@ public class TokenizerFactory {
     }
 
     /**
-     * Loads a tokenizer from a saved directory. If saved config is missing, returns null or fallback.
+     * Loads a tokenizer from a saved directory. If saved config is missing, returns
+     * null or fallback.
      *
      * @param directory target directory containing tokenizer metadata
      * @return loaded Tokenizer, or null if no valid configuration exists
      */
     public static Tokenizer loadTokenizer(File directory) {
-        if (directory == null || !directory.exists()) return null;
+        if (directory == null || !directory.exists())
+            return null;
 
         File metaFile = new File(directory, "tokenizer_config.properties");
         File vocabFile = new File(directory, "vocab.txt");
@@ -194,6 +233,7 @@ public class TokenizerFactory {
 
         try {
             Properties props = new Properties();
+
             try (FileInputStream in = new FileInputStream(metaFile)) {
                 props.load(in);
             }

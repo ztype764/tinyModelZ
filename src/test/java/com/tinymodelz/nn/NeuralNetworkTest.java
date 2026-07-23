@@ -1,16 +1,13 @@
 package com.tinymodelz.nn;
 
 import com.tinymodelz.math.Tensor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.util.Arrays;
 
 /**
- * Unit tests for Neural Network layers and components (Linear, Embedding, GeLU, LayerNorm, Dropout).
+ * Unit tests for Neural Network layers and components (Linear, Embedding, GeLU,
+ * LayerNorm, Dropout).
  */
 public class NeuralNetworkTest {
-
-    private static final Logger logger = LoggerFactory.getLogger(NeuralNetworkTest.class);
 
     public static void runTests() {
         com.tinymodelz.TestReporter.runTest("Testing Linear Layer Forward & Backward", () -> testLinearLayer());
@@ -28,7 +25,8 @@ public class NeuralNetworkTest {
 
     private static void assertEquals(int[] expected, int[] actual, String message) {
         if (!Arrays.equals(expected, actual)) {
-            throw new AssertionError(message + " - Expected: " + Arrays.toString(expected) + ", Got: " + Arrays.toString(actual));
+            throw new AssertionError(
+                    message + " - Expected: " + Arrays.toString(expected) + ", Got: " + Arrays.toString(actual));
         }
     }
 
@@ -41,21 +39,21 @@ public class NeuralNetworkTest {
     private static void testLinearLayer() {
         // Create Linear(3, 2)
         Linear linear = new Linear(3, 2, true);
-        
+
         // Manually assign weights and biases for deterministic validation
-        float[] wData = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+        float[] wData = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f };
         System.arraycopy(wData, 0, linear.getWeight().getData(), 0, 6);
-        float[] bData = {0.5f, -0.5f};
+        float[] bData = { 0.5f, -0.5f };
         System.arraycopy(bData, 0, linear.getBias().getData(), 0, 2);
 
         // Input shape [1, 3]
-        Tensor input = new Tensor(new float[]{1.0f, 0.0f, -1.0f}, new int[]{1, 3});
+        Tensor input = new Tensor(new float[] { 1.0f, 0.0f, -1.0f }, new int[] { 1, 3 });
         input.setRequiresGrad(true);
 
         // Forward: Output = X * W^T + bias
         Tensor out = linear.forward(input);
 
-        assertEquals(new int[]{1, 2}, out.getShape(), "Linear shape mismatch");
+        assertEquals(new int[] { 1, 2 }, out.getShape(), "Linear shape mismatch");
         assertEquals(-1.5f, out.getValByFlatIndex(0), 1e-5f, "Linear out[0] incorrect");
         assertEquals(-2.5f, out.getValByFlatIndex(1), 1e-5f, "Linear out[1] incorrect");
 
@@ -86,18 +84,18 @@ public class NeuralNetworkTest {
         // Embedding vocab=3, dim=4
         Embedding emb = new Embedding(3, 4);
         float[] wData = {
-            0.1f, 0.2f, 0.3f, 0.4f,
-            0.5f, 0.6f, 0.7f, 0.8f,
-            0.9f, 1.0f, 1.1f, 1.2f
+                0.1f, 0.2f, 0.3f, 0.4f,
+                0.5f, 0.6f, 0.7f, 0.8f,
+                0.9f, 1.0f, 1.1f, 1.2f
         };
         System.arraycopy(wData, 0, emb.getWeight().getData(), 0, 12);
 
         // Indices shape [2]
-        Tensor indices = new Tensor(new float[]{2.0f, 0.0f}, new int[]{2});
-        
+        Tensor indices = new Tensor(new float[] { 2.0f, 0.0f }, new int[] { 2 });
+
         Tensor out = emb.forward(indices);
-        assertEquals(new int[]{2, 4}, out.getShape(), "Embedding out shape mismatch");
-        
+        assertEquals(new int[] { 2, 4 }, out.getShape(), "Embedding out shape mismatch");
+
         assertEquals(0.9f, out.getValByFlatIndex(0), 1e-5f, "Embedding out row 2 incorrect");
         assertEquals(0.1f, out.getValByFlatIndex(4), 1e-5f, "Embedding out row 0 incorrect");
 
@@ -117,7 +115,7 @@ public class NeuralNetworkTest {
     }
 
     private static void testGeLUActivation() {
-        Tensor x = new Tensor(new float[]{-1.0f, 0.0f, 1.0f}, new int[]{3});
+        Tensor x = new Tensor(new float[] { -1.0f, 0.0f, 1.0f }, new int[] { 3 });
         x.setRequiresGrad(true);
 
         Tensor y = x.gelu();
@@ -141,10 +139,10 @@ public class NeuralNetworkTest {
     private static void testLayerNorm() {
         // Normalized dim = 3
         LayerNorm ln = new LayerNorm(3, 1e-5f);
-        Tensor input = new Tensor(new float[]{
-            1.0f, 2.0f, 3.0f,
-            10.0f, 20.0f, 30.0f
-        }, new int[]{2, 3});
+        Tensor input = new Tensor(new float[] {
+                1.0f, 2.0f, 3.0f,
+                10.0f, 20.0f, 30.0f
+        }, new int[] { 2, 3 });
         input.setRequiresGrad(true);
 
         Tensor out = ln.forward(input);
@@ -172,7 +170,7 @@ public class NeuralNetworkTest {
         // 1. Train mode
         dropout.train();
         Tensor outTrain = dropout.forward(input);
-        
+
         int zeroCount = 0;
         for (int i = 0; i < 100; i++) {
             if (outTrain.getValByFlatIndex(i) == 0.0f) {
@@ -184,7 +182,7 @@ public class NeuralNetworkTest {
         // Backward
         Tensor loss = outTrain.sum();
         loss.backward();
-        
+
         for (int i = 0; i < 100; i++) {
             float val = outTrain.getValByFlatIndex(i);
             float grad = input.getGrad()[i];

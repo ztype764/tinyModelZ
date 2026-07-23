@@ -38,14 +38,57 @@ public class TextDataset {
     }
 
     /**
-     * Constructs a TextDataset by reading from a file path.
+     * Constructs a TextDataset by streaming line-by-line from a file path.
+     * This avoids allocating multi-gigabyte String objects and prevents NegativeArraySizeException / OOM on large files.
      * 
      * @param filePath the path to the text file
      * @param tokenizer the tokenizer to use for encoding
      * @throws IOException if the file cannot be read
      */
     public TextDataset(Path filePath, Tokenizer tokenizer) throws IOException {
-        this(Files.readString(filePath), tokenizer);
+        if (filePath == null || !Files.exists(filePath)) {
+            throw new IllegalArgumentException("File path cannot be null or non-existent: " + filePath);
+        }
+        if (tokenizer == null) {
+            throw new IllegalArgumentException("Tokenizer cannot be null");
+        }
+
+        int capacity = 1024 * 1024;
+        int[] buffer = new int[capacity];
+        int size = 0;
+
+        try (java.io.BufferedReader reader = Files.newBufferedReader(filePath, java.nio.charset.StandardCharsets.UTF_8)) {
+            String line;
+            boolean firstLine = true;
+            while ((line = reader.readLine()) != null) {
+                if (!firstLine) {
+                    List<Integer> nlEnc = tokenizer.encode("\n");
+                    for (int id : nlEnc) {
+                        if (size >= buffer.length) {
+                            buffer = java.util.Arrays.copyOf(buffer, buffer.length * 2);
+                        }
+                        buffer[size++] = id;
+                    }
+                }
+                firstLine = false;
+
+                if (line.isEmpty()) continue;
+
+                List<Integer> encoded = tokenizer.encode(line);
+                for (int id : encoded) {
+                    if (size >= buffer.length) {
+                        buffer = java.util.Arrays.copyOf(buffer, buffer.length * 2);
+                    }
+                    buffer[size++] = id;
+                }
+            }
+        }
+
+        if (size == 0) {
+            throw new IllegalArgumentException("Dataset file contains no tokens: " + filePath);
+        }
+
+        this.tokenIds = java.util.Arrays.copyOf(buffer, size);
     }
 
     /**

@@ -1,10 +1,5 @@
 package com.tinymodelz.train;
 
-import com.tinymodelz.gpu.CUDAMathEngine;
-import com.tinymodelz.gpu.GPUMathEngine;
-import com.tinymodelz.math.Device;
-import com.tinymodelz.math.DeviceManager;
-import com.tinymodelz.math.ExecutionMode;
 import com.tinymodelz.math.Tensor;
 
 import java.util.Collection;
@@ -14,8 +9,10 @@ import java.util.Map;
 /**
  * <h3>AdamW Optimizer</h3>
  * 
- * <p>Implements the AdamW optimization algorithm (Loshchilov & Hutter, 2017),
- * which decouples L2 regularization/weight decay from the gradient update step.</p>
+ * <p>
+ * Implements the AdamW optimization algorithm (Loshchilov & Hutter, 2017),
+ * which decouples L2 regularization/weight decay from the gradient update step.
+ * </p>
  */
 public class AdamW {
 
@@ -30,18 +27,14 @@ public class AdamW {
     private final Map<Tensor, float[]> m = new IdentityHashMap<>();
     private final Map<Tensor, float[]> v = new IdentityHashMap<>();
 
-    private final Map<Tensor, Tensor> mGpuTensors = new IdentityHashMap<>();
-    private final Map<Tensor, Tensor> vGpuTensors = new IdentityHashMap<>();
-    private final Map<Tensor, Tensor> gradGpuTensors = new IdentityHashMap<>();
-
     /**
      * Constructs an AdamW optimizer.
      * 
-     * @param parameters the collection of parameter tensors to optimize
-     * @param lr the learning rate (eta)
-     * @param beta1 first moment decay rate (beta_1)
-     * @param beta2 second moment decay rate (beta_2)
-     * @param eps division stability factor (epsilon)
+     * @param parameters  the collection of parameter tensors to optimize
+     * @param lr          the learning rate (eta)
+     * @param beta1       first moment decay rate (beta_1)
+     * @param beta2       second moment decay rate (beta_2)
+     * @param eps         division stability factor (epsilon)
      * @param weightDecay weight decay coefficient (lambda)
      */
     public AdamW(Collection<Tensor> parameters, float lr, float beta1, float beta2, float eps, float weightDecay) {
@@ -57,83 +50,37 @@ public class AdamW {
     }
 
     /**
-     * Constructs an AdamW optimizer with default hyperparameters (beta1=0.9, beta2=0.999, eps=1e-8, weightDecay=0.01).
+     * Constructs an AdamW optimizer with default hyperparameters (beta1=0.9,
+     * beta2=0.999, eps=1e-8, weightDecay=0.01).
      * 
      * @param parameters the collection of parameter tensors to optimize
-     * @param lr the learning rate
+     * @param lr         the learning rate
      */
     public AdamW(Collection<Tensor> parameters, float lr) {
         this(parameters, lr, 0.9f, 0.999f, 1e-8f, 0.01f);
     }
 
     /**
-     * Performs a single optimization step, updating all parameters using their accumulated gradients.
+     * Performs a single optimization step, updating all parameters using their
+     * accumulated gradients.
      */
     public void step() {
         stepCount++;
         float biasCorrection1 = (float) (1.0 - Math.pow(beta1, stepCount));
         float biasCorrection2 = (float) (1.0 - Math.pow(beta2, stepCount));
 
-        boolean useGpuOpt = DeviceManager.isGpuActive() && (DeviceManager.getExecutionMode() == ExecutionMode.GPU_ONLY || DeviceManager.isGpuOnly());
-
         for (Tensor p : parameters) {
-            if (!p.requiresGrad()) continue;
+            if (!p.requiresGrad())
+                continue;
             float[] grad = p.getGrad();
-            if (grad == null) continue;
+            if (grad == null)
+                continue;
 
             int size = p.size();
 
             // Initialize moment state buffers using computing map
             float[] mState = m.computeIfAbsent(p, k -> new float[size]);
             float[] vState = v.computeIfAbsent(p, k -> new float[size]);
-
-            if (useGpuOpt && p.isContiguous() && p.offset() == 0) {
-                p.toGPU();
-
-                Tensor mTensor = mGpuTensors.computeIfAbsent(p, k -> {
-                    Tensor t = new Tensor(mState, p.getShape());
-                    t.toGPU();
-                    return t;
-                });
-                Tensor vTensor = vGpuTensors.computeIfAbsent(p, k -> {
-                    Tensor t = new Tensor(vState, p.getShape());
-                    t.toGPU();
-                    return t;
-                });
-                Tensor gradTensor = gradGpuTensors.computeIfAbsent(p, k -> {
-                    Tensor t = new Tensor(grad, p.getShape());
-                    t.toGPU();
-                    return t;
-                });
-
-                gradTensor.toGPU();
-
-                boolean success = false;
-                if (DeviceManager.getDevice() == Device.GPU_CUDA) {
-                    success = CUDAMathEngine.nAdamWStep(
-                        p.getGpuBufferHandle(),
-                        gradTensor.getGpuBufferHandle(),
-                        mTensor.getGpuBufferHandle(),
-                        vTensor.getGpuBufferHandle(),
-                        size, lr, beta1, beta2, eps, weightDecay, biasCorrection1, biasCorrection2
-                    );
-                } else if (DeviceManager.getDevice() == Device.GPU_OPENCL) {
-                    success = GPUMathEngine.nAdamWStep(
-                        p.getGpuBufferHandle(),
-                        gradTensor.getGpuBufferHandle(),
-                        mTensor.getGpuBufferHandle(),
-                        vTensor.getGpuBufferHandle(),
-                        size, lr, beta1, beta2, eps, weightDecay, biasCorrection1, biasCorrection2
-                    );
-                }
-
-                if (success) {
-                    p.markDirtyOnHost();
-                    mTensor.markDirtyOnHost();
-                    vTensor.markDirtyOnHost();
-                    continue;
-                }
-            }
 
             float[] data = p.getData();
 

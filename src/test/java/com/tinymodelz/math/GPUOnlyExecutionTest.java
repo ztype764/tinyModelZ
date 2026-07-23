@@ -33,6 +33,7 @@ public class GPUOnlyExecutionTest {
             t.markDirtyOnHost();
             assertTrue(t.isDirtyOnHost());
 
+            t.toCPU();
             float[] hData = t.getData();
             assertNotNull(hData);
             assertEquals(4, hData.length);

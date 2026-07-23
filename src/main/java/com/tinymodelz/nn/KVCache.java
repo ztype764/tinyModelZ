@@ -2,12 +2,13 @@ package com.tinymodelz.nn;
 
 import com.tinymodelz.math.Tensor;
 
-import java.util.Arrays;
-
 /**
  * <h3>KVCache</h3>
  *
- * <p>Manages Key and Value tensor caching across Transformer layers for fast autoregressive decoding.</p>
+ * <p>
+ * Manages Key and Value tensor caching across Transformer layers for fast
+ * autoregressive decoding.
+ * </p>
  */
 public class KVCache {
 
@@ -32,7 +33,8 @@ public class KVCache {
 
     public LayerCache getLayer(int layerIndex) {
         if (layerIndex < 0 || layerIndex >= layers.length) {
-            throw new IndexOutOfBoundsException("Invalid layer index " + layerIndex + " for KVCache with " + layers.length + " layers.");
+            throw new IndexOutOfBoundsException(
+                    "Invalid layer index " + layerIndex + " for KVCache with " + layers.length + " layers.");
         }
         return layers[layerIndex];
     }

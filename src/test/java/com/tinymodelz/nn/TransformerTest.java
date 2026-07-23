@@ -1,26 +1,27 @@
 package com.tinymodelz.nn;
 
 import com.tinymodelz.math.Tensor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.util.Arrays;
 
 /**
- * Unit tests for Transformer components (MultiHeadAttention, FeedForward, TransformerBlock).
+ * Unit tests for Transformer components (MultiHeadAttention, FeedForward,
+ * TransformerBlock).
  */
 public class TransformerTest {
 
-    private static final Logger logger = LoggerFactory.getLogger(TransformerTest.class);
-
     public static void runTests() {
-        com.tinymodelz.TestReporter.runTest("Testing Multi-Head Attention forward and backward pass", () -> testMultiHeadAttention());
-        com.tinymodelz.TestReporter.runTest("Testing Feed-Forward Network forward and backward pass", () -> testFeedForward());
-        com.tinymodelz.TestReporter.runTest("Testing Transformer Block forward and backward pass", () -> testTransformerBlock());
+        com.tinymodelz.TestReporter.runTest("Testing Multi-Head Attention forward and backward pass",
+                () -> testMultiHeadAttention());
+        com.tinymodelz.TestReporter.runTest("Testing Feed-Forward Network forward and backward pass",
+                () -> testFeedForward());
+        com.tinymodelz.TestReporter.runTest("Testing Transformer Block forward and backward pass",
+                () -> testTransformerBlock());
     }
 
     private static void assertEquals(int[] expected, int[] actual, String message) {
         if (!Arrays.equals(expected, actual)) {
-            throw new AssertionError(message + " - Expected: " + Arrays.toString(expected) + ", Got: " + Arrays.toString(actual));
+            throw new AssertionError(
+                    message + " - Expected: " + Arrays.toString(expected) + ", Got: " + Arrays.toString(actual));
         }
     }
 
@@ -44,13 +45,13 @@ public class TransformerTest {
         for (int i = 0; i < inputData.length; i++) {
             inputData[i] = (float) Math.sin(i);
         }
-        Tensor x = new Tensor(inputData, new int[]{B, T, C});
+        Tensor x = new Tensor(inputData, new int[] { B, T, C });
         x.setRequiresGrad(true);
 
         Tensor mask = MultiHeadAttention.createCausalMask(T);
 
         Tensor out = mha.forward(x, mask);
-        assertEquals(new int[]{B, T, C}, out.getShape(), "MultiHeadAttention forward shape mismatch");
+        assertEquals(new int[] { B, T, C }, out.getShape(), "MultiHeadAttention forward shape mismatch");
 
         // Backward
         Tensor loss = out.sum();
@@ -58,7 +59,7 @@ public class TransformerTest {
 
         // Verify gradients are propagated
         assertTrue(x.getGrad() != null, "Gradient of input x should not be null");
-        assertEquals(x.getShape(), new int[]{B, T, C}, "Input gradient shape mismatch");
+        assertEquals(x.getShape(), new int[] { B, T, C }, "Input gradient shape mismatch");
 
         // Verify parameter gradients are computed
         for (Tensor param : mha.getParameters()) {
@@ -95,11 +96,11 @@ public class TransformerTest {
         for (int i = 0; i < inputData.length; i++) {
             inputData[i] = (float) Math.cos(i);
         }
-        Tensor x = new Tensor(inputData, new int[]{B, T, C});
+        Tensor x = new Tensor(inputData, new int[] { B, T, C });
         x.setRequiresGrad(true);
 
         Tensor out = mlp.forward(x);
-        assertEquals(new int[]{B, T, C}, out.getShape(), "FeedForward forward shape mismatch");
+        assertEquals(new int[] { B, T, C }, out.getShape(), "FeedForward forward shape mismatch");
 
         Tensor loss = out.sum();
         loss.backward();
@@ -127,13 +128,13 @@ public class TransformerTest {
         for (int i = 0; i < inputData.length; i++) {
             inputData[i] = (float) (i * 0.1);
         }
-        Tensor x = new Tensor(inputData, new int[]{B, T, C});
+        Tensor x = new Tensor(inputData, new int[] { B, T, C });
         x.setRequiresGrad(true);
 
         Tensor mask = MultiHeadAttention.createCausalMask(T);
 
         Tensor out = block.forward(x, mask);
-        assertEquals(new int[]{B, T, C}, out.getShape(), "TransformerBlock forward shape mismatch");
+        assertEquals(new int[] { B, T, C }, out.getShape(), "TransformerBlock forward shape mismatch");
 
         Tensor loss = out.sum();
         loss.backward();

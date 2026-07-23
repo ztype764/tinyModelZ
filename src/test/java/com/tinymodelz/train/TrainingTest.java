@@ -21,6 +21,7 @@ public class TrainingTest {
 
     public static void runTests() {
         TestReporter.runTest("Dataset and DataLoader Batching", () -> testDatasetAndDataLoader());
+        TestReporter.runTest("DataLoader Bounds and Capacity Validation", () -> testDataLoaderBoundsValidation());
         TestReporter.runTest("Cross Entropy Loss Forward & Backward Pass", () -> testCrossEntropyLoss());
         TestReporter.runTest("AdamW Optimizer weight updates", () -> testAdamWOptimizer());
         TestReporter.runTest("Model Checkpoint Save & Load", () -> {
@@ -64,6 +65,42 @@ public class TrainingTest {
         for (int i = 0; i < xVal.length; i++) {
             assertEquals(xVal[i] + 1.0f, yVal[i], "Target is not shifted version of input");
         }
+    }
+
+    private static void testDataLoaderBoundsValidation() {
+        List<String> vocab = List.of("a", "b", "c", "d", "e");
+        CharacterTokenizer tokenizer = new CharacterTokenizer(vocab);
+        TextDataset dataset = new TextDataset("abcde", tokenizer); // length = 5 tokens
+
+        // Test 1: tokenIds.length < seqLen + 1 (5 < 5 + 1) -> must throw IllegalArgumentException
+        boolean threw1 = false;
+        try {
+            new DataLoader(dataset, 1, 5, false);
+        } catch (IllegalArgumentException e) {
+            threw1 = true;
+        }
+        if (!threw1) {
+            throw new AssertionError("DataLoader failed to throw IllegalArgumentException when token count < seqLen + 1");
+        }
+
+        // Test 2: numSamples < batchSize (samples = 5 - 2 = 3 < batchSize 5) -> must throw IllegalArgumentException
+        boolean threw2 = false;
+        try {
+            new DataLoader(dataset, 5, 2, false);
+        } catch (IllegalArgumentException e) {
+            threw2 = true;
+        }
+        if (!threw2) {
+            throw new AssertionError("DataLoader failed to throw IllegalArgumentException when available samples < batchSize");
+        }
+
+        // Test 3: Shuffled and non-shuffled memory-optimized modes with strided sampling
+        DataLoader loaderNoShuffle = new DataLoader(dataset, 1, 2, 2, false); // seqLen=2, stride=2 -> 2 samples
+        assertEquals(2, loaderNoShuffle.getTotalSamples(), "Strided total samples calculation failed");
+        assertEquals(2, loaderNoShuffle.getNumBatches(), "Strided num batches calculation failed");
+
+        DataLoader loaderShuffle = new DataLoader(dataset, 1, 2, 2, true);
+        assertEquals(2, loaderShuffle.getTotalSamples(), "Shuffled strided total samples calculation failed");
     }
 
     private static void testCrossEntropyLoss() {
