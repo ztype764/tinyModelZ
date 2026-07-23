@@ -26,6 +26,8 @@ public class AdamW {
     private int stepCount = 0;
     private final Map<Tensor, float[]> m = new IdentityHashMap<>();
     private final Map<Tensor, float[]> v = new IdentityHashMap<>();
+    private final Map<Tensor, Long> mGpuMap = new IdentityHashMap<>();
+    private final Map<Tensor, Long> vGpuMap = new IdentityHashMap<>();
 
     /**
      * Constructs an AdamW optimizer.
@@ -72,15 +74,30 @@ public class AdamW {
         for (Tensor p : parameters) {
             if (!p.requiresGrad())
                 continue;
-            float[] grad = p.getGrad();
-            if (grad == null)
-                continue;
-
             int size = p.size();
 
             // Initialize moment state buffers using computing map
             float[] mState = m.computeIfAbsent(p, k -> new float[size]);
             float[] vState = v.computeIfAbsent(p, k -> new float[size]);
+
+            if (com.tinymodelz.math.DeviceManager.isGpuActive() && com.tinymodelz.math.DeviceManager.getDevice() == com.tinymodelz.math.Device.GPU_CUDA && com.tinymodelz.gpu.CUDAMathEngine.isAvailable() && p.isOnGPU()) {
+                long pHandle = p.getGpuBufferHandle();
+                long gHandle = p.getGpuGradBufferHandle();
+                long mHandle = mGpuMap.computeIfAbsent(p, k -> com.tinymodelz.gpu.CUDAMathEngine.nAllocBuffer((long) size * Float.BYTES));
+                long vHandle = vGpuMap.computeIfAbsent(p, k -> com.tinymodelz.gpu.CUDAMathEngine.nAllocBuffer((long) size * Float.BYTES));
+
+                if (pHandle != 0 && gHandle != 0 && mHandle != 0 && vHandle != 0) {
+                    boolean ok = com.tinymodelz.gpu.CUDAMathEngine.nAdamWStep(pHandle, gHandle, mHandle, vHandle, size, lr, beta1, beta2, eps, weightDecay, biasCorrection1, biasCorrection2);
+                    if (ok) {
+                        p.markDirtyOnHost();
+                        continue;
+                    }
+                }
+            }
+
+            float[] grad = p.getGrad();
+            if (grad == null)
+                continue;
 
             float[] data = p.getData();
 
@@ -133,10 +150,7 @@ public class AdamW {
      */
     public void zeroGrad() {
         parameters.parallelStream().forEach(p -> {
-            float[] grad = p.getGrad();
-            if (grad != null) {
-                java.util.Arrays.fill(grad, 0.0f);
-            }
+            p.zeroGrad();
         });
     }
 

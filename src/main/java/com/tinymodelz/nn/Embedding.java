@@ -52,6 +52,39 @@ public class Embedding extends Module {
         outShape[indexShape.length] = embeddingDim;
         
         int numElements = indices.size();
+
+        if (com.tinymodelz.math.DeviceManager.isGpuActive() && com.tinymodelz.math.DeviceManager.getDevice() == com.tinymodelz.math.Device.GPU_CUDA && com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
+            weight.toGPU();
+            indices.toGPU();
+            Tensor result = new Tensor(outShape);
+            result.toGPU();
+            if (com.tinymodelz.gpu.CUDAMathEngine.nEmbeddingForward(weight.getGpuBufferHandle(), indices.getGpuBufferHandle(), result.getGpuBufferHandle(), numElements, embeddingDim)) {
+                result.markDirtyOnHost();
+                if (weight.requiresGrad()) {
+                    result.setRequiresGrad(true);
+                    result.setAutogradMetadata(
+                        List.of(weight),
+                        "embedding",
+                        (gradOutput) -> {
+                            if (weight.getGrad() == null) {
+                                weight.accumulateGrad(new float[weight.getData().length]);
+                            }
+                            float[] weightGrad = weight.getGrad();
+                            int weightOffset = weight.offset();
+                            for (int i = 0; i < numElements; i++) {
+                                int tokenIdx = (int) indices.getValByFlatIndex(i);
+                                int outOffset = i * embeddingDim;
+                                for (int d = 0; d < embeddingDim; d++) {
+                                    weightGrad[weightOffset + tokenIdx * embeddingDim + d] += gradOutput[outOffset + d];
+                                }
+                            }
+                        }
+                    );
+                }
+                return result;
+            }
+        }
+
         float[] outData = new float[numElements * embeddingDim];
         
         Tensor contIndices = indices.toContiguous();

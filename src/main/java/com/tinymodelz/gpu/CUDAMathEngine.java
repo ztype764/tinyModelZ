@@ -53,16 +53,39 @@ public class CUDAMathEngine {
         }
     }
 
-    private static native boolean nInit();
-    private static native boolean nIsAvailable();
-    private static native String nGetDeviceName();
-    private static native boolean nMatMul(float[] a, float[] b, float[] c, int m, int n, int k);
-    private static native boolean nBatchedMatMul(float[] a, float[] b, float[] c, int numBatches, int m, int n, int k);
+    public static native boolean nInit();
+    public static native boolean nIsAvailable();
+    public static native String nGetDeviceName();
+    public static native boolean nMatMul(float[] a, float[] b, float[] c, int m, int n, int k);
+    public static native boolean nBatchedMatMul(float[] a, float[] b, float[] c, int numBatches, int m, int n, int k);
+
+    // Buffer Allocation & Deallocation
     public static native long nAllocBuffer(long sizeBytes);
     public static native void nFreeBuffer(long handle);
+    public static native long nAllocHostBuffer(long sizeBytes);
+    public static native void nFreeHostBuffer(long handle);
+
+    // Memory Copy Operations
     public static native boolean nCopyToGPU(long handle, float[] hData, long sizeBytes);
     public static native boolean nCopyFromGPU(float[] hData, long handle, long sizeBytes);
+    public static native boolean nCopyGPUToGPU(long destHandle, long srcHandle, long sizeBytes);
+
+    // GPU-Resident Execution Kernels
+    public static native boolean nMatMulResident(long aHandle, long bHandle, long cHandle, int m, int n, int k);
+    public static native boolean nBatchedMatMulResident(long aHandle, long bHandle, long cHandle, int numBatches, int m, int n, int k);
+    public static native boolean nEmbeddingForward(long wHandle, long tokensHandle, long outHandle, int batchSeq, int embedDim);
+    public static native boolean nGeluForward(long inHandle, long outHandle, int size);
+    public static native boolean nGeluBackward(long gradInHandle, long gradOutHandle, long inHandle, int size);
+    public static native boolean nLayerNormForward(long inHandle, long gammaHandle, long betaHandle, long outHandle, long meanHandle, long rstdHandle, int numRows, int normDim, float eps);
+    public static native boolean nElementwiseAdd(long aHandle, long bHandle, long cHandle, int size);
+    public static native boolean nVecAccumulate(long destHandle, long srcHandle, int size);
+    public static native boolean nVecFill(long destHandle, float value, int size);
     public static native boolean nAdamWStep(long pHandle, long gHandle, long mHandle, long vHandle, int size, float lr, float beta1, float beta2, float eps, float weightDecay, float bc1, float bc2);
+
+    // Stream & Sync APIs
+    public static native void nSynchronizeStream();
+    public static native void nSynchronizeContext();
+    public static native void nShutdown();
 
     public static boolean isAvailable() {
         return loaded && initialized && nIsAvailable();

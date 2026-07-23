@@ -63,9 +63,11 @@ public class Tensor {
     // GPU Residency & Lazy Sync fields
     private Device device = Device.CPU;
     private long gpuBufferHandle = 0;
+    private long gpuGradBufferHandle = 0;
     private boolean onGPU = false;
     private boolean dirtyOnHost = false;
     private boolean dirtyOnGPU = false;
+    private boolean dirtyGradOnHost = false;
 
     public synchronized boolean toGPU() {
         if (!DeviceManager.isGpuActive()) return false;
@@ -102,7 +104,26 @@ public class Tensor {
             dirtyOnHost = false;
             device = Device.CPU;
         }
+        if (onGPU && dirtyGradOnHost && gpuGradBufferHandle != 0 && grad != null) {
+            if (DeviceManager.getDevice() == Device.GPU_CUDA) {
+                CUDAMathEngine.nCopyFromGPU(grad, gpuGradBufferHandle, (long) size * Float.BYTES);
+            }
+            dirtyGradOnHost = false;
+        }
         return true;
+    }
+
+    public synchronized long getGpuGradBufferHandle() {
+        if (requiresGrad && gpuGradBufferHandle == 0 && size > 0 && onGPU) {
+            long bytes = (long) size * Float.BYTES;
+            if (DeviceManager.getDevice() == Device.GPU_CUDA) {
+                gpuGradBufferHandle = CUDAMathEngine.nAllocBuffer(bytes);
+                if (gpuGradBufferHandle != 0) {
+                    CUDAMathEngine.nVecFill(gpuGradBufferHandle, 0.0f, size);
+                }
+            }
+        }
+        return gpuGradBufferHandle;
     }
 
     public boolean isOnGPU() {
@@ -127,6 +148,10 @@ public class Tensor {
 
     public void markDirtyOnHost() {
         this.dirtyOnHost = true;
+    }
+
+    public void markGradDirtyOnHost() {
+        this.dirtyGradOnHost = true;
     }
 
     @FunctionalInterface
@@ -219,6 +244,9 @@ public class Tensor {
 
     // Getters and Configurations
     public float[] getData() {
+        if (onGPU && dirtyOnHost) {
+            toCPU();
+        }
         return data;
     }
 
@@ -262,6 +290,9 @@ public class Tensor {
     }
 
     public float[] getGrad() {
+        if (onGPU && dirtyGradOnHost) {
+            toCPU();
+        }
         return grad;
     }
 
@@ -269,11 +300,27 @@ public class Tensor {
         if (grad != null) {
             Arrays.fill(grad, 0.0f);
         }
+        if (onGPU && gpuGradBufferHandle != 0 && DeviceManager.getDevice() == Device.GPU_CUDA) {
+            CUDAMathEngine.nVecFill(gpuGradBufferHandle, 0.0f, size);
+        }
     }
 
     public void accumulateGrad(float[] incomingGrad) {
         if (this.grad == null) {
             this.grad = new float[this.data.length];
+        }
+        if (onGPU && DeviceManager.getDevice() == Device.GPU_CUDA && CUDAMathEngine.isAvailable() && isContiguous() && offset == 0) {
+            long gHandle = getGpuGradBufferHandle();
+            if (gHandle != 0) {
+                long incHandle = CUDAMathEngine.nAllocBuffer((long) incomingGrad.length * Float.BYTES);
+                if (incHandle != 0) {
+                    CUDAMathEngine.nCopyToGPU(incHandle, incomingGrad, (long) incomingGrad.length * Float.BYTES);
+                    CUDAMathEngine.nVecAccumulate(gHandle, incHandle, size);
+                    CUDAMathEngine.nFreeBuffer(incHandle);
+                    markGradDirtyOnHost();
+                    return;
+                }
+            }
         }
         if (isContiguous() && offset == 0) {
             if (incomingGrad.length > PARALLEL_THRESHOLD) {
@@ -520,6 +567,33 @@ public class Tensor {
     public Tensor add(Tensor other) {
         int[] outShape = broadcastShapes(this.shape, other.shape);
         int outSize = computeSize(outShape);
+
+        if (DeviceManager.isGpuActive() && DeviceManager.getDevice() == Device.GPU_CUDA && CUDAMathEngine.isAvailable()
+                && Arrays.equals(this.shape, other.shape) && isContiguous() && other.isContiguous() && offset == 0 && other.offset == 0) {
+
+            toGPU();
+            other.toGPU();
+            Tensor result = new Tensor(outShape);
+            result.toGPU();
+            if (CUDAMathEngine.nElementwiseAdd(getGpuBufferHandle(), other.getGpuBufferHandle(), result.getGpuBufferHandle(), outSize)) {
+                result.markDirtyOnHost();
+                if (this.requiresGrad || other.requiresGrad) {
+                    result.requiresGrad = true;
+                    result.creators = List.of(this, other);
+                    result.opName = "add";
+                    result.backwardFn = (gradOutput) -> {
+                        if (this.requiresGrad) {
+                            accumulateBroadcastedGrad(this, gradOutput, outShape);
+                        }
+                        if (other.requiresGrad) {
+                            accumulateBroadcastedGrad(other, gradOutput, outShape);
+                        }
+                    };
+                }
+                return result;
+            }
+        }
+
         float[] outData = new float[outSize];
 
         if (Arrays.equals(this.shape, other.shape) && isContiguous() && other.isContiguous()) {
@@ -746,35 +820,60 @@ public class Tensor {
         Tensor BCont = other.toContiguous();
 
         // --- GPU Acceleration Dispatch ---
-        long totalFlops = (long) numBatches * M * K * N;
-        if (DeviceManager.isGpuActive() && totalFlops >= 10_000_000L) {
+        if (DeviceManager.isGpuActive()) {
             boolean success = false;
             if (DeviceManager.getDevice() == Device.GPU_CUDA && com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
-                success = com.tinymodelz.gpu.CUDAMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches,
-                        M, N, K);
-            } else {
-                success = com.tinymodelz.gpu.GPUMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches, M,
-                        N, K);
-            }
-            if (success) {
-                Tensor result = new Tensor(outData, outShape);
-                if (this.requiresGrad || other.requiresGrad) {
-                    result.requiresGrad = true;
-                    result.creators = List.of(this, other);
-                    result.opName = "matmul";
-                    result.backwardFn = (gradOutput) -> {
-                        Tensor gradOutTensor = new Tensor(gradOutput, outShape);
-                        if (this.requiresGrad) {
-                            Tensor dX = gradOutTensor.matmul(other.transpose(rank - 2, rank - 1));
-                            this.accumulateGrad(dX.data);
-                        }
-                        if (other.requiresGrad) {
-                            Tensor dY = this.transpose(rank - 2, rank - 1).matmul(gradOutTensor);
-                            other.accumulateGrad(dY.data);
-                        }
-                    };
+                ACont.toGPU();
+                BCont.toGPU();
+                Tensor result = new Tensor(outShape);
+                result.toGPU();
+                if (numBatches > 1) {
+                    success = com.tinymodelz.gpu.CUDAMathEngine.nBatchedMatMulResident(ACont.getGpuBufferHandle(), BCont.getGpuBufferHandle(), result.getGpuBufferHandle(), numBatches, M, N, K);
+                } else {
+                    success = com.tinymodelz.gpu.CUDAMathEngine.nMatMulResident(ACont.getGpuBufferHandle(), BCont.getGpuBufferHandle(), result.getGpuBufferHandle(), M, N, K);
                 }
-                return result;
+                if (success) {
+                    result.markDirtyOnHost();
+                    if (this.requiresGrad || other.requiresGrad) {
+                        result.requiresGrad = true;
+                        result.creators = List.of(this, other);
+                        result.opName = "matmul";
+                        result.backwardFn = (gradOutput) -> {
+                            Tensor gradOutTensor = new Tensor(gradOutput, outShape);
+                            if (this.requiresGrad) {
+                                Tensor dX = gradOutTensor.matmul(other.transpose(rank - 2, rank - 1));
+                                this.accumulateGrad(dX.getData());
+                            }
+                            if (other.requiresGrad) {
+                                Tensor dY = this.transpose(rank - 2, rank - 1).matmul(gradOutTensor);
+                                other.accumulateGrad(dY.getData());
+                            }
+                        };
+                    }
+                    return result;
+                }
+            } else if (DeviceManager.getDevice() == Device.GPU_OPENCL) {
+                success = com.tinymodelz.gpu.GPUMathEngine.batchedMatmul(ACont.data, BCont.data, outData, numBatches, M, N, K);
+                if (success) {
+                    Tensor result = new Tensor(outData, outShape);
+                    if (this.requiresGrad || other.requiresGrad) {
+                        result.requiresGrad = true;
+                        result.creators = List.of(this, other);
+                        result.opName = "matmul";
+                        result.backwardFn = (gradOutput) -> {
+                            Tensor gradOutTensor = new Tensor(gradOutput, outShape);
+                            if (this.requiresGrad) {
+                                Tensor dX = gradOutTensor.matmul(other.transpose(rank - 2, rank - 1));
+                                this.accumulateGrad(dX.getData());
+                            }
+                            if (other.requiresGrad) {
+                                Tensor dY = this.transpose(rank - 2, rank - 1).matmul(gradOutTensor);
+                                other.accumulateGrad(dY.getData());
+                            }
+                        };
+                    }
+                    return result;
+                }
             }
         }
 
@@ -1035,6 +1134,35 @@ public class Tensor {
     }
 
     public Tensor gelu() {
+        if (DeviceManager.isGpuActive() && DeviceManager.getDevice() == Device.GPU_CUDA && CUDAMathEngine.isAvailable() && isContiguous() && offset == 0) {
+            toGPU();
+            Tensor result = new Tensor(shape);
+            result.toGPU();
+            if (CUDAMathEngine.nGeluForward(getGpuBufferHandle(), result.getGpuBufferHandle(), size)) {
+                result.markDirtyOnHost();
+                if (this.requiresGrad) {
+                    result.requiresGrad = true;
+                    result.creators = List.of(this);
+                    result.opName = "gelu";
+                    result.backwardFn = (gradOutput) -> {
+                        if (this.requiresGrad) {
+                            Tensor gradOutTensor = new Tensor(gradOutput, shape);
+                            gradOutTensor.toGPU();
+                            Tensor dX = new Tensor(shape);
+                            dX.toGPU();
+                            if (CUDAMathEngine.nGeluBackward(dX.getGpuBufferHandle(), gradOutTensor.getGpuBufferHandle(), getGpuBufferHandle(), size)) {
+                                dX.markDirtyOnHost();
+                                this.accumulateGrad(dX.getData());
+                            } else {
+                                this.accumulateGrad(gradOutput);
+                            }
+                        }
+                    };
+                }
+                return result;
+            }
+        }
+
         float[] outData = new float[size];
         if (isContiguous() && offset == 0) {
             java.util.stream.IntStream.range(0, size).parallel().forEach(i -> {

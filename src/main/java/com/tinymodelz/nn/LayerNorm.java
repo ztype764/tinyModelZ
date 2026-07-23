@@ -61,6 +61,40 @@ public class LayerNorm extends Module {
         int D = normalizedDim;
         int N = x.size() / D;
 
+        if (com.tinymodelz.math.DeviceManager.isGpuActive() && com.tinymodelz.math.DeviceManager.getDevice() == com.tinymodelz.math.Device.GPU_CUDA && com.tinymodelz.gpu.CUDAMathEngine.isAvailable()) {
+            x.toGPU();
+            weight.toGPU();
+            bias.toGPU();
+            Tensor result = new Tensor(originalShape);
+            result.toGPU();
+
+            long meanHandle = com.tinymodelz.gpu.CUDAMathEngine.nAllocBuffer((long) N * Float.BYTES);
+            long rstdHandle = com.tinymodelz.gpu.CUDAMathEngine.nAllocBuffer((long) N * Float.BYTES);
+
+            if (meanHandle != 0 && rstdHandle != 0) {
+                boolean ok = com.tinymodelz.gpu.CUDAMathEngine.nLayerNormForward(x.getGpuBufferHandle(), weight.getGpuBufferHandle(), bias.getGpuBufferHandle(), result.getGpuBufferHandle(), meanHandle, rstdHandle, N, D, eps);
+                com.tinymodelz.gpu.CUDAMathEngine.nFreeBuffer(meanHandle);
+                com.tinymodelz.gpu.CUDAMathEngine.nFreeBuffer(rstdHandle);
+                if (ok) {
+                    result.markDirtyOnHost();
+                    if (x.requiresGrad() || weight.requiresGrad() || bias.requiresGrad()) {
+                        result.setRequiresGrad(true);
+                        result.setAutogradMetadata(
+                            List.of(x, weight, bias),
+                            "layernorm",
+                            (gradOutput) -> {
+                                Tensor gradOutTensor = new Tensor(gradOutput, originalShape);
+                                if (x.requiresGrad()) {
+                                    x.accumulateGrad(gradOutTensor.getData());
+                                }
+                            }
+                        );
+                    }
+                    return result;
+                }
+            }
+        }
+
         // Ensure we operate on contiguous data
         Tensor contiguousX = x.toContiguous();
         float[] xData = contiguousX.getData();
